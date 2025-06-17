@@ -1,0 +1,8 @@
+>uv run serve --input-path "./examples/" --working-directory "C:/data/temp/ontocast/working/" --ontology-directory "C:/data/temp/ontocast/ontology/"
+Failed to generate triples: [Errno 11001] getaddrinfo failed
+Failed to generate triples: [Errno 11001] getaddrinfo failed
+Failed to generate triples: [Errno 11001] getaddrinfo failed
+For Text to Ontology: maximum visits exceeded
+Error processing examples\einstein.json: [Errno 11001] getaddrinfo failed
+
+>

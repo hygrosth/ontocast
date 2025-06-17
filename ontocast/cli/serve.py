@@ -103,8 +103,13 @@ def create_app(tools: ToolBox, head_chunks: Optional[int] = None, max_visits: in
     @app.post("/process")
     async def process(request: Request):
         """MCP process endpoint."""
+        state = None
         try:
-            content_type = request.headers.get("content-type", "")
+            content_type = (
+                request.headers.get("content-type")
+                if "content-type" in request.headers
+                else ""
+            )
             logger.debug(f"Content-Type: {content_type}")
             logger.debug(f"Request headers: {request.headers}")
             logger.debug(f"Request body: {request.body}")
@@ -196,7 +201,7 @@ def create_app(tools: ToolBox, head_chunks: Optional[int] = None, max_visits: in
                             "stage": state.get("failure_stage", "unknown"),
                             "reason": state.get("failure_reason", "unknown"),
                         }
-                        if hasattr(state, "failure_stage")
+                        if state and hasattr(state, "failure_stage")
                         else None,
                     }
                 ),
