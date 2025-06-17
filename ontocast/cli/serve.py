@@ -256,7 +256,7 @@ def run(
     tools: ToolBox = ToolBox(
         llm_provider=llm_provider,
         llm_base_url=os.getenv("LLM_BASE_URL", None),
-        model_name=os.getenv("LLM_MODEL_NAME", "gpt-4o-mini"),
+        model_name=os.getenv("LLM_MODEL_NAME", "gpt-4o-mini"), #question: similar pricing, maybe stronger model? https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash
         temperature=os.getenv("LLM_TEMPERATURE", 0.0),
         working_directory=working_directory,
         ontology_directory=ontology_directory,

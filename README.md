@@ -39,6 +39,9 @@ OntoCast is a powerful framework that automatically extracts semantic triples fr
     - Configurable workflow with visit limits
     - Chunk aggregation preserving fact lineage
 
+##
+## *SM: The following sections have a reasonable amount of details. **Don't** try to show more details - **don't** try to make easier to less technical people:)*
+##
 
 ## Installation
 

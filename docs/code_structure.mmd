@@ -1,0 +1,85 @@
+---
+config:
+  flowchart:
+    curve: linear
+    htmlLabels: true
+    useMaxWidth: false
+  look: handDrawn
+  theme: base
+  themeVariables:
+    fontFamily: '''Architects Daughter'', cursive'
+    fontSize: 20px
+    lineColor: '#FFAB91'
+    primaryBorderColor: '#143642'
+    primaryColor: '#FFF3E0'
+    primaryTextColor: '#372237'
+---
+graph TD
+    subgraph ontocast
+        direction LR
+        subgraph root
+            direction TB
+            A[ontocast]
+        end
+        subgraph agent
+            direction TB
+            B(agent)
+            B --> B1(aggregate_facts.py)
+            B --> B2(check_chunks.py)
+            B --> B3(chunk_text.py)
+            B --> B4(convert_document.py)
+            B --> B5(criticise_facts.py)
+            B --> B6(criticise_ontology.py)
+            B --> B7(render_facts.py)
+            B --> B8(render_ontology_triples.py)
+            B --> B9(select_ontology.py)
+            B --> B10(sublimate_ontology.py)
+        end
+        subgraph cli
+            direction TB
+            C(cli)
+            C --> C1(serve.py)
+            C --> C2(util.py)
+            C --> C3(split_chunks.py)
+            C --> C4(plot_graph.py)
+            C --> C5(pdfs_to_markdown.py)
+            C --> C6(cmp_states.py)
+        end
+        subgraph prompt
+            direction TB
+            D(prompt)
+            D --> D1(select_ontology.py)
+            D --> D2(render_ontology.py)
+            D --> D3(render_facts.py)
+            D --> D4(criticise_ontology.py)
+            D --> D5(criticise_facts.py)
+        end
+        subgraph tool
+            direction TB
+            E(tool)
+            subgraph chunk
+                E1(chunk)
+                E1 --> E1a(util.py)
+                E1 --> E1b(chunker.py)
+            end
+            E --> E2(validate.py)
+            E --> E3(triple_manager.py)
+            E --> E4(setup.py)
+            E --> E5(ontology_manager.py)
+            E --> E6(onto.py)
+            E --> E7(llm.py)
+            E --> E8(converter.py)
+            E --> E9(aggregate.py)
+            E --> E1
+        end
+
+        A --> B
+        A --> C
+        A --> D
+        A --> E
+        A --> F(util.py)
+        A --> G(toolbox.py)
+        A --> H(text_utils.py)
+        A --> I(stategraph.py)
+        A --> J(onto.py)
+    end 
