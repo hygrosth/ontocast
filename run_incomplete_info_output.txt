@@ -1,0 +1,157 @@
+> uv run serve --input-path "./examples/" --working-directory "C:/data/temp/ontocast/working/" --ontology-directory "C:/data/temp/ontocast/ontology/" --logging-level info
+2025-06-17 22:03:57 - INFO - sentence_transformers.SentenceTransformer - __init__ : Load pretrained SentenceTransformer: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+2025-06-17 22:04:00 - INFO - ontocast.cli.util - crawl_directories : Found file paths: [WindowsPath('examples/WFC_SahmRule_20240725.pdf')]
+2025-06-17 22:04:04 - INFO - docling.document_converter - _convert : Going to convert document batch...
+2025-06-17 22:04:04 - INFO - docling.document_converter - _get_pipeline : Initializing pipeline for StandardPdfPipeline with options hash 70041f74270850b7bedf7c8f5c2dcede
+2025-06-17 22:04:04 - INFO - docling.models.factories.base_factory - load_from_plugins : Loading plugin 'docling_defaults'
+2025-06-17 22:04:04 - INFO - docling.models.factories - get_ocr_factory : Registered ocr engines: ['easyocr', 'ocrmac', 'rapidocr', 'tesserocr', 'tesseract']
+2025-06-17 22:04:05 - INFO - docling.utils.accelerator_utils - decide_device : Accelerator device: 'cpu'
+2025-06-17 22:04:08 - INFO - docling.utils.accelerator_utils - decide_device : Accelerator device: 'cpu'
+2025-06-17 22:04:08 - INFO - docling.utils.accelerator_utils - decide_device : Accelerator device: 'cpu'
+2025-06-17 22:04:09 - INFO - docling.models.factories.base_factory - load_from_plugins : Loading plugin 'docling_defaults'
+2025-06-17 22:04:09 - INFO - docling.models.factories - get_picture_description_factory : Registered picture descriptions: ['vlm', 'api']
+2025-06-17 22:04:09 - INFO - docling.pipeline.base_pipeline - execute : Processing document doc
+2025-06-17 22:04:36 - INFO - docling.document_converter - _convert : Finished converting document doc in 36.23 sec.
+2025-06-17 22:04:36 - INFO - ontocast.agent.chunk_text - chunk_text : Chunking the text
+2025-06-17 22:04:36 - INFO - ontocast.tool.chunk.chunker - recursive_chunking : chunk lengths: [20242]
+2025-06-17 22:04:39 - INFO - ontocast.tool.chunk.chunker - recursive_chunking : chunk lengths: [14176, 6048]
+2025-06-17 22:04:39 - INFO - ontocast.agent.check_chunks - check_chunks_empty : Chunks (rem): 2, chunks proc: 0. Setting up current chunk
+2025-06-17 22:04:39 - INFO - ontocast.agent.check_chunks - check_chunks_empty : Chunk available, setting status to FAILED and proceeding to SELECT_ONTOLOGY
+2025-06-17 22:04:39 - INFO - ontocast.agent.select_ontology - select_ontology : Selecting ontology
+2025-06-17 22:04:39 - INFO - ontocast.util - wrapper : Starting to execute Text to Ontology
+2025-06-17 22:04:39 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Starting to render ontology triples
+2025-06-17 22:04:39 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Creating fresh ontology
+2025-06-17 22:04:59 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:04:59 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Ontology addendum has 46 triples.
+2025-06-17 22:04:59 - INFO - ontocast.util - count_visits_conditional_success : For Text to Ontology: status is SUCCESS, proceeding to next node
+2025-06-17 22:04:59 - INFO - ontocast.util - wrapper : Starting to execute Criticise Ontology
+2025-06-17 22:04:59 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Criticize ontology
+2025-06-17 22:05:10 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:05:10 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Ontology critique failed, setting failure state
+2025-06-17 22:05:10 - INFO - ontocast.util - wrapper : Starting to execute Text to Ontology
+2025-06-17 22:05:10 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Starting to render ontology triples
+2025-06-17 22:05:41 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:05:41 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Ontology addendum has 83 triples.
+2025-06-17 22:05:41 - INFO - ontocast.util - count_visits_conditional_success : For Text to Ontology: status is SUCCESS, proceeding to next node
+2025-06-17 22:05:41 - INFO - ontocast.util - wrapper : Starting to execute Criticise Ontology
+2025-06-17 22:05:41 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Criticize ontology
+2025-06-17 22:05:53 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:05:53 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Updating existing ontology: ont_econ
+2025-06-17 22:05:53 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Ontology critique failed, setting failure state
+2025-06-17 22:05:53 - INFO - ontocast.util - wrapper : Starting to execute Text to Ontology
+2025-06-17 22:05:53 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Starting to render ontology triples
+2025-06-17 22:06:31 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:06:31 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Ontology addendum has 103 triples.
+2025-06-17 22:06:31 - INFO - ontocast.util - count_visits_conditional_success : For Text to Ontology: status is SUCCESS, proceeding to next node
+2025-06-17 22:06:31 - INFO - ontocast.util - wrapper : Starting to execute Criticise Ontology
+2025-06-17 22:06:31 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Criticize ontology
+2025-06-17 22:06:48 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:06:48 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Updating existing ontology: ont_econ
+2025-06-17 22:06:48 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Ontology critique failed, setting failure state
+2025-06-17 22:06:48 - ERROR - ontocast.util - count_visits_conditional_success : For Criticise Ontology: maximum visits exceeded
+2025-06-17 22:06:48 - INFO - ontocast.util - wrapper : Starting to execute Text to Facts
+2025-06-17 22:06:48 - INFO - ontocast.agent.render_facts - render_facts : Starting to render facts
+2025-06-17 22:07:06 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:07:06 - INFO - ontocast.util - count_visits_conditional_success : For Text to Facts: status is SUCCESS, proceeding to next node
+2025-06-17 22:07:06 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Current chunk namespace: https://example.com/doc/de06cb6c6aa4/chunk/4d9caa48f06d/
+2025-06-17 22:07:06 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 0 ontology triples
+2025-06-17 22:07:06 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 40 facts triples
+2025-06-17 22:07:06 - INFO - ontocast.tool.validate - make_graph_connected : Connected 2 components
+2025-06-17 22:07:06 - INFO - ontocast.util - wrapper : Starting to execute Criticise Facts
+2025-06-17 22:07:06 - INFO - ontocast.agent.criticise_facts - criticise_facts : Criticize facts
+2025-06-17 22:07:11 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:07:11 - INFO - ontocast.util - wrapper : Starting to execute Text to Facts
+2025-06-17 22:07:11 - INFO - ontocast.agent.render_facts - render_facts : Starting to render facts
+2025-06-17 22:07:30 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:07:30 - INFO - ontocast.util - count_visits_conditional_success : For Text to Facts: status is SUCCESS, proceeding to next node
+2025-06-17 22:07:30 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Current chunk namespace: https://example.com/doc/de06cb6c6aa4/chunk/4d9caa48f06d/
+2025-06-17 22:07:30 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 2 ontology triples
+2025-06-17 22:07:30 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 85 facts triples
+2025-06-17 22:07:30 - INFO - ontocast.util - wrapper : Starting to execute Criticise Facts
+2025-06-17 22:07:30 - INFO - ontocast.agent.criticise_facts - criticise_facts : Criticize facts
+2025-06-17 22:07:37 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:07:37 - INFO - ontocast.util - wrapper : Starting to execute Text to Facts
+2025-06-17 22:07:37 - INFO - ontocast.agent.render_facts - render_facts : Starting to render facts
+2025-06-17 22:08:04 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:08:04 - ERROR - ontocast.agent.render_facts - render_facts : Failed to generate triples: at line 72 of <>:
+Bad syntax (objectList expected) at ^ in:
+"...b'al stimulus" .\n\ncd:hasSahmRuleIndicator cd:sahmRuleIndicator'^b' ;\n    co:indicatesRecession co:SahmRule .\n\ncd:hasUnemployme'..."
+2025-06-17 22:08:04 - ERROR - ontocast.util - count_visits_conditional_success : For Text to Facts: maximum visits exceeded
+2025-06-17 22:08:04 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Current chunk namespace: https://example.com/doc/de06cb6c6aa4/chunk/4d9caa48f06d/
+2025-06-17 22:08:04 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 0 ontology triples
+2025-06-17 22:08:04 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 85 facts triples
+2025-06-17 22:08:04 - INFO - ontocast.util - wrapper : Starting to execute Criticise Facts
+2025-06-17 22:08:04 - INFO - ontocast.agent.criticise_facts - criticise_facts : Criticize facts
+2025-06-17 22:08:09 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:08:09 - ERROR - ontocast.util - count_visits_conditional_success : For Criticise Facts: maximum visits exceeded
+2025-06-17 22:08:09 - INFO - ontocast.agent.check_chunks - check_chunks_empty : Chunks (rem): 1, chunks proc: 0. Setting up current chunk
+2025-06-17 22:08:09 - INFO - ontocast.agent.check_chunks - check_chunks_empty : Chunk available, setting status to FAILED and proceeding to SELECT_ONTOLOGY
+2025-06-17 22:08:09 - INFO - ontocast.agent.select_ontology - select_ontology : Selecting ontology
+2025-06-17 22:08:09 - INFO - ontocast.agent.select_ontology - select_ontology : Retrieved descriptions for 1 ontologies
+2025-06-17 22:08:10 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:08:10 - INFO - ontocast.util - wrapper : Starting to execute Text to Ontology
+2025-06-17 22:08:10 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Starting to render ontology triples
+2025-06-17 22:08:47 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:08:47 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Ontology addendum has 117 triples.
+2025-06-17 22:08:47 - INFO - ontocast.util - count_visits_conditional_success : For Text to Ontology: status is SUCCESS, proceeding to next node
+2025-06-17 22:08:47 - INFO - ontocast.util - wrapper : Starting to execute Criticise Ontology
+2025-06-17 22:08:47 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Criticize ontology
+2025-06-17 22:08:53 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:08:54 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Updating existing ontology: ont_econ
+2025-06-17 22:08:54 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Ontology critique failed, setting failure state
+2025-06-17 22:08:54 - INFO - ontocast.util - wrapper : Starting to execute Text to Ontology
+2025-06-17 22:08:54 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Starting to render ontology triples
+2025-06-17 22:09:32 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:09:32 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Ontology addendum has 144 triples.
+2025-06-17 22:09:32 - INFO - ontocast.util - count_visits_conditional_success : For Text to Ontology: status is SUCCESS, proceeding to next node
+2025-06-17 22:09:32 - INFO - ontocast.util - wrapper : Starting to execute Criticise Ontology
+2025-06-17 22:09:32 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Criticize ontology
+2025-06-17 22:09:39 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:09:40 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Updating existing ontology: ont_econ
+2025-06-17 22:09:40 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Ontology critique failed, setting failure state
+2025-06-17 22:09:40 - INFO - ontocast.util - wrapper : Starting to execute Text to Ontology
+2025-06-17 22:09:40 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Starting to render ontology triples
+2025-06-17 22:10:39 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:10:40 - INFO - ontocast.agent.render_ontology_triples - render_onto_triples : Ontology addendum has 170 triples.
+2025-06-17 22:10:40 - INFO - ontocast.util - count_visits_conditional_success : For Text to Ontology: status is SUCCESS, proceeding to next node
+2025-06-17 22:10:40 - INFO - ontocast.util - wrapper : Starting to execute Criticise Ontology
+2025-06-17 22:10:40 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Criticize ontology
+2025-06-17 22:10:47 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:10:47 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Updating existing ontology: ont_econ
+2025-06-17 22:10:47 - INFO - ontocast.agent.criticise_ontology - criticise_ontology : Ontology critique failed, setting failure state
+2025-06-17 22:10:47 - ERROR - ontocast.util - count_visits_conditional_success : For Criticise Ontology: maximum visits exceeded
+2025-06-17 22:10:47 - INFO - ontocast.util - wrapper : Starting to execute Text to Facts
+2025-06-17 22:10:47 - INFO - ontocast.agent.render_facts - render_facts : Starting to render facts
+2025-06-17 22:11:24 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:11:24 - INFO - ontocast.util - count_visits_conditional_success : For Text to Facts: status is SUCCESS, proceeding to next node
+2025-06-17 22:11:24 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Current chunk namespace: https://example.com/doc/de06cb6c6aa4/chunk/ad88aeb91a0c/
+2025-06-17 22:11:24 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 0 ontology triples
+2025-06-17 22:11:24 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 69 facts triples
+2025-06-17 22:11:24 - INFO - ontocast.util - wrapper : Starting to execute Criticise Facts
+2025-06-17 22:11:24 - INFO - ontocast.agent.criticise_facts - criticise_facts : Criticize facts
+2025-06-17 22:11:27 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:11:27 - INFO - ontocast.util - wrapper : Starting to execute Text to Facts
+2025-06-17 22:11:27 - INFO - ontocast.agent.render_facts - render_facts : Starting to render facts
+2025-06-17 22:12:26 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:12:26 - INFO - ontocast.util - count_visits_conditional_success : For Text to Facts: status is SUCCESS, proceeding to next node
+2025-06-17 22:12:26 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Current chunk namespace: https://example.com/doc/de06cb6c6aa4/chunk/ad88aeb91a0c/
+2025-06-17 22:12:26 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 0 ontology triples
+2025-06-17 22:12:26 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 225 facts triples
+2025-06-17 22:12:26 - INFO - ontocast.tool.validate - make_graph_connected : Connected 2 components
+2025-06-17 22:12:26 - INFO - ontocast.util - wrapper : Starting to execute Criticise Facts
+2025-06-17 22:12:26 - INFO - ontocast.agent.criticise_facts - criticise_facts : Criticize facts
+2025-06-17 22:12:30 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:12:30 - INFO - ontocast.util - wrapper : Starting to execute Text to Facts
+2025-06-17 22:12:30 - INFO - ontocast.agent.render_facts - render_facts : Starting to render facts
+2025-06-17 22:13:26 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:13:26 - INFO - ontocast.util - count_visits_conditional_success : For Text to Facts: status is SUCCESS, proceeding to next node
+2025-06-17 22:13:26 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Current chunk namespace: https://example.com/doc/de06cb6c6aa4/chunk/ad88aeb91a0c/
+2025-06-17 22:13:26 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 2 ontology triples
+2025-06-17 22:13:26 - INFO - ontocast.agent.sublimate_ontology - _sublimate_ontology : Found 271 facts triples
+2025-06-17 22:13:26 - INFO - ontocast.util - wrapper : Starting to execute Criticise Facts
+2025-06-17 22:13:26 - INFO - ontocast.agent.criticise_facts - criticise_facts : Criticize facts
+2025-06-17 22:13:39 - INFO - httpx - _send_single_request : HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-17 22:13:39 - ERROR - ontocast.util - count_visits_conditional_success : For Criticise Facts: maximum visits exceeded
+2025-06-17 22:13:39 - INFO - ontocast.agent.check_chunks - check_chunks_empty : Chunks (rem): 0, chunks proc: 1. Setting up current chunk
+2025-06-17 22:13:39 - INFO - ontocast.agent.check_chunks - check_chunks_empty : No more chunks, setting status to SUCCESS and proceeding to AGGREGATE_FACTS
+2025-06-17 22:13:39 - ERROR - ontocast.cli.serve - process_files : Error processing examples\WFC_SahmRule_20240725.pdf: 'Graph' object has no attribute 'unbind_chunk_namespaces'

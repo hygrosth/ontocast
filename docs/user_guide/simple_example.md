@@ -1,6 +1,6 @@
 # Simple Example: From Text to Triples
 
-This tutorial will guide you through a simple example of using OntoCast to extract semantic triples from a short piece of text. We will use the `/process` endpoint of the running OntoCast server.
+This tutorial will guide you through a simple example of using OntoCast to extract semantic triples from a short piece of text. 
 
 
 ## Step 1, Alternative A: Server
@@ -22,7 +22,7 @@ curl -X POST http://localhost:8999/process -H "Content-Type: application/json" -
 ## Step 1, Alternative B: No server
 
 ```cmd
-uv run serve --input-path "./examples/" --working-directory "C:/data/temp/ontocast/working/" --ontology-directory "C:/data/temp/ontocast/ontology/"
+uv run serve --input-path "./examples/" --working-directory "C:/data/temp/ontocast/working/" --ontology-directory "C:/data/temp/ontocast/ontology/" --logging-level info
 ```
 
 ## Step 2: Understanding the Output
