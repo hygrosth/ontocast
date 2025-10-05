@@ -23,9 +23,7 @@ Example:
 import asyncio
 import logging
 import logging.config
-import os
 import pathlib
-from typing import Optional
 
 import click
 from dotenv import load_dotenv
@@ -34,7 +32,8 @@ from langgraph.graph.state import CompiledStateGraph
 from robyn import Headers, Request, Response, Robyn, jsonify
 
 from ontocast.cli.util import crawl_directories
-from ontocast.onto import AgentState
+from ontocast.config import Config, ServerConfig
+from ontocast.onto.state import AgentState
 from ontocast.stategraph import create_agent_graph
 from ontocast.toolbox import ToolBox, init_toolbox
 
@@ -42,31 +41,42 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_recursion_limit(
-    max_visits: int, head_chunks: Optional[int] = None
+    head_chunks: int | None,
+    server_config: ServerConfig,
 ) -> int:
     """Calculate the recursion limit based on max_visits and head_chunks.
 
     Args:
-        max_visits: Maximum number of visits allowed per node
         head_chunks: Optional maximum number of chunks to process
 
     Returns:
         int: Calculated recursion limit
     """
-    base_recursion_limit = int(os.getenv("RECURSION_LIMIT", 1000))
-    estimated_chunks = int(os.getenv("ESTIMATED_CHUNKS", 30))
     if head_chunks is not None:
         # If we know the number of chunks, calculate exact limit
-        return max(base_recursion_limit, max_visits * head_chunks * 10)
+        return max(
+            server_config.base_recursion_limit,
+            server_config.max_visits * head_chunks * 10,
+        )
     else:
         # If we don't know chunks, use a conservative estimate
-        return max(base_recursion_limit, max_visits * estimated_chunks * 10)
+        return max(
+            server_config.base_recursion_limit,
+            server_config.max_visits * server_config.estimated_chunks * 10,
+        )
 
 
-def create_app(tools: ToolBox, head_chunks: Optional[int] = None, max_visits: int = 3):
+def create_app(
+    tools: ToolBox,
+    server_config: ServerConfig,
+    head_chunks: int | None = None,
+):
     app = Robyn(__file__)
     workflow: CompiledStateGraph = create_agent_graph(tools)
-    recursion_limit = calculate_recursion_limit(max_visits, head_chunks)
+    recursion_limit = calculate_recursion_limit(
+        head_chunks,
+        server_config,
+    )
 
     @app.get("/health")
     async def health_check():
@@ -125,21 +135,25 @@ def create_app(tools: ToolBox, head_chunks: Optional[int] = None, max_visits: in
     @app.post("/process")
     async def process(request: Request):
         """MCP process endpoint."""
+        workflow_state: dict | None = None
         try:
             content_type = request.headers.get("content-type")
             logger.debug(f"Content-Type: {content_type}")
             logger.debug(f"Request headers: {request.headers}")
             logger.debug(f"Request body: {request.body}")
 
-            if content_type.startswith("application/json"):
+            if content_type and content_type.startswith("application/json"):
                 data = request.body
-                # Convert string to bytes
-                bytes_data = data.encode("utf-8")
+                # Convert string to bytes if needed
+                if isinstance(data, str):
+                    bytes_data = data.encode("utf-8")
+                else:
+                    bytes_data = data
                 logger.debug(
                     f"Parsed JSON data: {data}, bytes length: {len(bytes_data)}"
                 )
                 files = {"input.json": bytes_data}
-            elif content_type.startswith("multipart/form-data"):
+            elif content_type and content_type.startswith("multipart/form-data"):
                 files = request.files
                 logger.debug(f"Files: {files.keys()}")
                 logger.debug(f"Files-types: {[(k, type(v)) for k, v in files.items()]}")
@@ -169,30 +183,41 @@ def create_app(tools: ToolBox, head_chunks: Optional[int] = None, max_visits: in
                     ),
                 )
 
-            state = AgentState(
-                files=files, max_visits=max_visits, max_chunks=head_chunks
+            initial_state = AgentState(
+                files=files,
+                max_visits=server_config.max_visits,
+                max_chunks=head_chunks,
+                skip_ontology_development=server_config.skip_ontology_development,
             )
 
             async for chunk in workflow.astream(
-                state,
+                initial_state,
                 stream_mode="values",
                 config=RunnableConfig(recursion_limit=recursion_limit),
             ):
-                state = chunk
+                workflow_state = chunk
 
-            # Format response according to MCP specification
+            if workflow_state is None:
+                raise ValueError("Workflow did not return a valid state")
+
             result = {
                 "status": "success",
                 "data": {
-                    "facts": state["aggregated_facts"].serialize(format="turtle"),
-                    "ontology": state["current_ontology"].graph.serialize(
+                    "facts": workflow_state["aggregated_facts"].serialize(
                         format="turtle"
-                    ),
+                    )
+                    if workflow_state.get("aggregated_facts")
+                    else "",
+                    "ontology": workflow_state["current_ontology"].graph.serialize(
+                        format="turtle"
+                    )
+                    if workflow_state.get("current_ontology")
+                    else "",
                 },
                 "metadata": {
-                    "status": state["status"],
-                    "chunks_processed": len(state.get("chunks_processed", [])),
-                    "chunks_remaining": len(state.get("chunks", [])),
+                    "status": workflow_state["status"],
+                    "chunks_processed": len(workflow_state.get("chunks_processed", [])),
+                    "chunks_remaining": len(workflow_state.get("chunks", [])),
                 },
             }
 
@@ -206,6 +231,15 @@ def create_app(tools: ToolBox, head_chunks: Optional[int] = None, max_visits: in
             logger.error(f"Error processing document: {str(e)}")
             logger.error(f"Error type: {type(e)}")
             logger.error("Error traceback:", exc_info=True)
+
+            # Try to get error details from workflow_state if available
+            error_details = None
+            if workflow_state:
+                error_details = {
+                    "stage": workflow_state.get("failure_stage", "unknown"),
+                    "reason": workflow_state.get("failure_reason", "unknown"),
+                }
+
             return Response(
                 status_code=500,
                 headers=Headers({"Content-Type": "application/json"}),
@@ -214,12 +248,7 @@ def create_app(tools: ToolBox, head_chunks: Optional[int] = None, max_visits: in
                         "status": "error",
                         "error": str(e),
                         "error_type": type(e).__name__,
-                        "error_details": {
-                            "stage": state.get("failure_stage", "unknown"),
-                            "reason": state.get("failure_reason", "unknown"),
-                        }
-                        if hasattr(state, "failure_stage")
-                        else None,
+                        "error_details": error_details,
                     }
                 ),
             )
@@ -239,36 +268,12 @@ def create_app(tools: ToolBox, head_chunks: Optional[int] = None, max_visits: in
         "Fuseki will be used as triple store (preferred over Neo4j)."
     ),
 )
-@click.option(
-    "--ontology-directory", type=click.Path(path_type=pathlib.Path), default=None
-)
-@click.option(
-    "--working-directory", type=click.Path(path_type=pathlib.Path), required=True
-)
 @click.option("--input-path", type=click.Path(path_type=pathlib.Path), default=None)
 @click.option("--head-chunks", type=int, default=None)
-@click.option(
-    "--max-visits",
-    type=int,
-    default=3,
-    help="Maximum number of visits allowed per node",
-)
-@click.option("--logging-level", type=click.STRING)
-@click.option(
-    "--clean",
-    is_flag=True,
-    default=False,
-    help="If set, triple store (Neo4j or Fuseki) will be initialized as clean (all data deleted on startup).",
-)
 def run(
     env_path: pathlib.Path,
-    ontology_directory: Optional[pathlib.Path],
-    working_directory: pathlib.Path,
-    input_path: Optional[pathlib.Path],
-    head_chunks: Optional[int],
-    max_visits: int,
-    logging_level: Optional[str],
-    clean: bool,
+    input_path: pathlib.Path | None,
+    head_chunks: int | None,
 ):
     """
     Main entry point for the OntoCast server/CLI.
@@ -280,44 +285,40 @@ def run(
 
     If --clean is set, the triple store (Neo4j or Fuseki) will be initialized as clean (all data deleted on startup).
     """
-    if logging_level is not None:
+
+    _ = load_dotenv(dotenv_path=env_path.expanduser())
+    # Global configuration instance
+    config = Config()
+
+    # Validate LLM configuration
+    config.validate_llm_config()
+
+    if config.logging_level is not None:
         try:
-            logger_conf = f"logging.{logging_level}.conf"
+            logger_conf = f"logging.{config.logging_level}.conf"
             logging.config.fileConfig(logger_conf, disable_existing_loggers=False)
             logger.debug("debug is on")
         except Exception as e:
             logger.error(f"could set logging level correctly {e}")
 
-    _ = load_dotenv(dotenv_path=env_path.expanduser())
+    # Use CLI arguments or fall back to config values
+    if config.tools.paths.working_directory is not None:
+        config.tools.paths.working_directory = pathlib.Path(
+            config.tools.paths.working_directory
+        ).expanduser()
+        config.tools.paths.working_directory.mkdir(parents=True, exist_ok=True)
+    else:
+        raise ValueError(
+            "Working directory must be provided via CLI argument or WORKING_DIRECTORY config"
+        )
 
-    llm_provider = os.getenv("LLM_PROVIDER", "openai")
-    port = os.getenv("PORT", 8999)
+    if config.tools.paths.ontology_directory is not None:
+        config.tools.paths.ontology_directory = pathlib.Path(
+            config.tools.paths.ontology_directory
+        ).expanduser()
 
-    if llm_provider == "openai" and "OPENAI_API_KEY" not in os.environ:
-        raise ValueError("OPENAI_API_KEY environment variable is not set")
-
-    if working_directory:
-        working_directory = working_directory.expanduser()
-        working_directory.mkdir(parents=True, exist_ok=True)
-
-    neo4j_uri = os.getenv("NEO4J_URI", None)
-    neo4j_auth = os.getenv("NEO4J_AUTH", None)
-    fuseki_uri = os.getenv("FUSEKI_URI", None)
-    fuseki_auth = os.getenv("FUSEKI_AUTH", None)
-
-    tools: ToolBox = ToolBox(
-        llm_provider=llm_provider,
-        llm_base_url=os.getenv("LLM_BASE_URL", None),
-        model_name=os.getenv("LLM_MODEL_NAME", "gpt-4o-mini"),
-        temperature=os.getenv("LLM_TEMPERATURE", 0.0),
-        working_directory=working_directory,
-        ontology_directory=ontology_directory,
-        neo4j_uri=neo4j_uri,
-        neo4j_auth=neo4j_auth,
-        fuseki_uri=fuseki_uri,
-        fuseki_auth=fuseki_auth,
-        clean=clean,
-    )
+    # Create ToolBox with config directly
+    tools: ToolBox = ToolBox(config)
     init_toolbox(tools)
 
     workflow: CompiledStateGraph = create_agent_graph(tools)
@@ -332,15 +333,19 @@ def run(
             )
         )
 
-        recursion_limit = calculate_recursion_limit(max_visits, head_chunks)
+        recursion_limit = calculate_recursion_limit(
+            head_chunks,
+            config.server,
+        )
 
         async def process_files():
             for file_path in files:
                 try:
                     state = AgentState(
                         files={file_path.as_posix(): file_path.read_bytes()},
-                        max_visits=max_visits,
+                        max_visits=config.server.max_visits,
                         max_chunks=head_chunks,
+                        skip_ontology_development=config.server.skip_ontology_development,
                     )
                     async for _ in workflow.astream(
                         state,
@@ -354,9 +359,13 @@ def run(
 
         asyncio.run(process_files())
     else:
-        app = create_app(tools, head_chunks, max_visits=max_visits)
-        logger.info(f"Starting MCP-ready server on port {port}")
-        app.start(port=port)
+        app = create_app(
+            tools=tools,
+            server_config=config.server,
+            head_chunks=head_chunks,
+        )
+        logger.info(f"Starting Ontocast server on port {config.server.port}")
+        app.start(port=config.server.port)
 
 
 if __name__ == "__main__":

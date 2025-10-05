@@ -5,7 +5,12 @@ tools in the OntoCast system. It provides common functionality and interface
 for tool implementations.
 """
 
-from ontocast.onto import BasePydanticModel
+from dataclasses import dataclass, field
+from typing import Set
+
+from rdflib import URIRef
+
+from ontocast.onto.model import BasePydanticModel
 
 
 class Tool(BasePydanticModel):
@@ -26,3 +31,25 @@ class Tool(BasePydanticModel):
             **kwargs: Keyword arguments passed to the parent class.
         """
         super().__init__(**kwargs)
+
+
+@dataclass
+class EntityMetadata:
+    """Metadata for an entity in the graph."""
+
+    local_name: str
+    label: str | None = None
+    comment: str | None = None
+    types: Set[URIRef] = field(default_factory=set)
+
+
+@dataclass
+class PredicateMetadata:
+    """Metadata for a predicate in the graph."""
+
+    local_name: str
+    label: str | None = None
+    comment: str | None = None
+    domain: None | URIRef = None
+    range: None | URIRef = None
+    is_explicit_property: bool = False

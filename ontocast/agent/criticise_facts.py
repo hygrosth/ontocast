@@ -9,7 +9,9 @@ import logging
 from langchain.output_parsers import PydanticOutputParser
 from langchain.prompts import PromptTemplate
 
-from ontocast.onto import AgentState, FailureStages, KGCritiqueReport
+from ontocast.onto.enum import FailureStages
+from ontocast.onto.model import KGCritiqueReport
+from ontocast.onto.state import AgentState
 from ontocast.prompt.criticise_facts import prompt as criticise_facts_prompt
 from ontocast.toolbox import ToolBox
 

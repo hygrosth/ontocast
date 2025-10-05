@@ -10,13 +10,10 @@ import logging
 from langchain.output_parsers import PydanticOutputParser
 from langchain.prompts import PromptTemplate
 
-from ontocast.onto import (
-    ONTOLOGY_NULL_IRI,
-    AgentState,
-    FailureStages,
-    OntologyUpdateCritiqueReport,
-    Status,
-)
+from ontocast.onto.constants import ONTOLOGY_NULL_IRI
+from ontocast.onto.enum import FailureStages, Status
+from ontocast.onto.model import OntologyUpdateCritiqueReport
+from ontocast.onto.state import AgentState
 from ontocast.prompt.criticise_ontology import prompt_fresh, prompt_update
 from ontocast.tool import LLMTool, OntologyManager
 from ontocast.toolbox import ToolBox
@@ -81,7 +78,18 @@ def criticise_ontology(state: AgentState, tools: ToolBox) -> AgentState:
         f"score: {critique.ontology_update_score}"
     )
 
-    if state.current_ontology.iri == ONTOLOGY_NULL_IRI:
+    if state.ontology_addendum.iri == ONTOLOGY_NULL_IRI:
+        state.set_failure(
+            stage=FailureStages.ONTOLOGY_CRITIQUE,
+            reason=critique.ontology_update_failed,
+            success_score=critique.ontology_update_score,
+        )
+
+    if (
+        state.current_ontology.iri == ONTOLOGY_NULL_IRI
+        or state.current_ontology.iri is None
+        or state.ontology_addendum.iri not in tools.ontology_manager
+    ):
         logger.debug("Adding new ontology to manager")
         om_tool.ontologies.append(state.ontology_addendum)
         state.current_ontology = state.ontology_addendum
@@ -98,7 +106,7 @@ def criticise_ontology(state: AgentState, tools: ToolBox) -> AgentState:
         logger.info("Ontology critique failed, setting failure state")
         state.set_failure(
             stage=FailureStages.ONTOLOGY_CRITIQUE,
-            reason=critique.ontology_update_critique_comment,
+            reason=critique.ontology_update_critique,
             success_score=critique.ontology_update_score,
         )
 
