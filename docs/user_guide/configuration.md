@@ -31,8 +31,9 @@ Config
     ├── recursion_limit: int   # Workflow recursion limit
     ├── estimated_chunks: int  # Estimated number of chunks
     ├── max_visits: int        # Maximum visits per node
-    ├── clean: bool            # Clean triple store on startup
-    └── skip_ontology_development: bool  # Skip ontology critique
+    ├── skip_ontology_development: bool  # Skip ontology critique
+    ├── skip_facts_rendering: bool  # Skip facts rendering
+    └── ontology_max_triples: int | None  # Maximum triples in ontology graph
 ```
 
 ---
@@ -40,6 +41,10 @@ Config
 ## Environment Variables
 
 ### LLM Configuration
+
+# LLM Caching
+ONTOCAST_CACHE_DIR=/path/to/cache         # Custom cache directory (optional)
+
 
 ```bash
 # LLM Provider and Model
@@ -58,17 +63,43 @@ PORT=8999                              # Server port
 RECURSION_LIMIT=1000                   # Workflow recursion limit
 ESTIMATED_CHUNKS=30                    # Estimated number of chunks
 MAX_VISITS=3                           # Maximum visits per node
-CLEAN=false                            # Clean triple store on startup
 SKIP_ONTOLOGY_DEVELOPMENT=false        # Skip ontology critique step
+SKIP_FACTS_RENDERING=false             # Skip facts extraction and go straight to serialization
+ONTOLOGY_MAX_TRIPLES=10000             # Maximum triples allowed in ontology graph (set empty for unlimited)
+```
+
+### Backend Configuration
+
+Backend selection is **automatically inferred** from available configuration - no explicit flags needed:
+
+```bash
+# Fuseki Backend (auto-detected if both provided)
+FUSEKI_URI=http://localhost:3032/test
+FUSEKI_AUTH=admin:password
+
+# Neo4j Backend (auto-detected if both provided)  
+NEO4J_URI=bolt://localhost:7689
+NEO4J_AUTH=neo4j:password
+
+# Filesystem Triple Store (auto-detected if both provided)
+ONTOCAST_WORKING_DIRECTORY=/path/to/working
+ONTOCAST_ONTOLOGY_DIRECTORY=/path/to/ontologies
+
+# Filesystem Manager (auto-detected if working directory provided)
+# Can be combined with Fuseki or Neo4j for debugging
+ONTOCAST_WORKING_DIRECTORY=/path/to/working
 ```
 
 ### Path Configuration
 
 ```bash
-# Path Settings
-WORKING_DIRECTORY=/path/to/working     # Working directory (required)
-ONTOLOGY_DIRECTORY=/path/to/ontologies # Ontology files directory (optional)
+# Path Settings (all configured via .env file)
+ONTOCAST_WORKING_DIRECTORY=/path/to/working     # Working directory (required for filesystem backends)
+ONTOCAST_ONTOLOGY_DIRECTORY=/path/to/ontologies # Ontology files directory (required for filesystem backends)
+ONTOCAST_CACHE_DIR=/path/to/cache               # Cache directory (optional)
 ```
+
+**Note:** All paths are configured via the `.env` file - no CLI overrides available.
 
 ### Triple Store Configuration
 
@@ -92,6 +123,52 @@ CURRENT_DOMAIN=https://example.com     # Domain for URI generation
 
 ---
 
+
+## LLM Caching
+
+OntoCast includes automatic LLM response caching to improve performance and reduce API costs. Caching is enabled by default and requires no configuration.
+
+### Default Cache Locations
+
+- **Tests**: `.test_cache/llm/` in the current working directory
+- **Windows**: `%USERPROFILE%\AppData\Local\ontocast\llm\`
+- **Unix/Linux**: `~/.cache/ontocast/llm/` (or `$XDG_CACHE_HOME/ontocast/llm/`)
+
+### Environment Variables
+
+```bash
+# Optional: Custom cache directory
+ONTOCAST_CACHE_DIR=/path/to/custom/cache
+```
+
+### Benefits
+
+- **Faster Execution**: Repeated queries return cached responses instantly
+- **Cost Reduction**: Identical requests don't hit the LLM API
+- **Offline Capability**: Tests can run without API access if responses are cached
+- **Transparent**: No configuration required - works automatically
+
+### Custom Cache Directory
+
+```python
+from pathlib import Path
+from ontocast.tool.llm import LLMTool
+from ontocast.config import LLMConfig
+
+# Create LLM configuration
+llm_config = LLMConfig(
+    provider="openai",
+    model_name="gpt-4o-mini",
+    api_key="your-api-key"
+)
+
+# Cache directory is managed automatically by Cacher
+llm_tool = LLMTool.create(
+    config=llm_config
+)
+```
+
+
 ## Usage Examples
 
 ### Basic Configuration
@@ -107,8 +184,8 @@ tool_config = config.get_tool_config()
 server_config = config.get_server_config()
 
 # Access specific settings
-llm_provider = config.tools.llm.provider
-working_dir = config.tools.paths.working_directory
+llm_provider = config.tool_config.llm_config.provider
+working_dir = config.tool_config.path_config.working_directory
 server_port = config.server.port
 ```
 
@@ -168,17 +245,22 @@ class ServerConfig(BaseSettings):
     recursion_limit: int = 1000                 # Recursion limit
     estimated_chunks: int = 30                  # Estimated chunks
     max_visits: int = 3                        # Max visits
-    clean: bool = False                        # Clean startup
     skip_ontology_development: bool = False     # Skip critique
+    skip_facts_rendering: bool = False         # Skip facts rendering
+    ontology_max_triples: int | None = 10000    # Max triples in ontology graph
 ```
+
 
 ### PathConfig
 
 ```python
 class PathConfig(BaseSettings):
-    working_directory: Path | None = None       # Working directory
-    ontology_directory: Path | None = None        # Ontology directory
+    working_directory: Path | None = None       # Working directory (required for filesystem backends)
+    ontology_directory: Path | None = None      # Ontology directory (required for filesystem backends)
+    cache_dir: Path | None = None               # Cache directory (optional)
 ```
+
+**Note:** All paths are configured via environment variables in the `.env` file - no CLI overrides available.
 
 ---
 
@@ -201,7 +283,9 @@ except ValueError as e:
 
 - **Missing API Key**: `LLM_API_KEY` environment variable is required for OpenAI
 - **Invalid Provider**: LLM provider must be "openai" or "ollama"
-- **Missing Working Directory**: `WORKING_DIRECTORY` must be set
+- **Missing Working Directory**: `ONTOCAST_WORKING_DIRECTORY` must be set when filesystem backends are enabled
+- **Missing Ontology Directory**: `ONTOCAST_ONTOLOGY_DIRECTORY` must be set when filesystem backends are enabled
+- **No Backend Available**: At least one backend (triple store or filesystem) must be configured
 - **Invalid Paths**: Paths must exist and be accessible
 
 ---
@@ -212,7 +296,7 @@ except ValueError as e:
 
 ```bash
 # Old (deprecated)
-OPENAI_API_KEY=your-key
+LLM_API_KEY=your-key
 
 # New (current)
 LLM_API_KEY=your-key
@@ -223,12 +307,14 @@ LLM_API_KEY=your-key
 ```python
 # Old way (deprecated)
 from ontocast.config import config
-llm_provider = config.llm.provider
+
+llm_provider = config.tool_config.llm_config.provider
 
 # New way (current)
 from ontocast.config import Config
+
 config = Config()
-llm_provider = config.tools.llm.provider
+llm_provider = config.tool_config.llm_config.provider
 ```
 
 ### ToolBox Initialization Changes
@@ -269,10 +355,17 @@ PORT=8999
 MAX_VISITS=3
 RECURSION_LIMIT=1000
 ESTIMATED_CHUNKS=30
+ONTOLOGY_MAX_TRIPLES=10000
+
+# Backend Configuration (auto-detected)
+FUSEKI_URI=http://localhost:3032/test
+FUSEKI_AUTH=admin:password
+ONTOCAST_WORKING_DIRECTORY=/path/to/working
 
 # Path Configuration
-WORKING_DIRECTORY=/path/to/working
-ONTOLOGY_DIRECTORY=/path/to/ontologies
+ONTOCAST_WORKING_DIRECTORY=/path/to/working
+ONTOCAST_ONTOLOGY_DIRECTORY=/path/to/ontologies
+ONTOCAST_CACHE_DIR=/path/to/cache
 
 # Triple Store Configuration (Optional)
 FUSEKI_URI=http://localhost:3032/test
@@ -303,8 +396,8 @@ from ontocast.config import Config
 config = Config()
 
 print("Configuration loaded successfully!")
-print(f"LLM Provider: {config.tools.llm.provider}")
-print(f"Working Directory: {config.tools.paths.working_directory}")
+print(f"LLM Provider: {config.tool_config.llm_config.provider}")
+print(f"Working Directory: {config.tool_config.path_config.working_directory}")
 print(f"Server Port: {config.server.port}")
 
 # Validate configuration

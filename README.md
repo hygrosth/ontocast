@@ -27,6 +27,10 @@ OntoCast is a framework for extracting semantic triples (creating a Knowledge Gr
 - **Triple Store Integration**: Supports Neo4j (n10s) and Apache Fuseki
 - **Hierarchical Configuration**: Type-safe configuration system with environment variable support
 - **CLI Parameters**: Flexible command-line interface with `--skip-ontology-critique` option
+- **Automatic LLM Caching**: Built-in response caching for improved performance and cost reduction
+- **GraphUpdate Operations**: Token-efficient SPARQL-based updates instead of full graph regeneration
+- **Budget Tracking**: Comprehensive tracking of LLM usage and triple generation metrics
+- **Ontology Versioning**: Automatic semantic versioning with hash-based lineage tracking
 
 ---
 
@@ -70,10 +74,12 @@ PORT=8999
 MAX_VISITS=3
 RECURSION_LIMIT=1000
 ESTIMATED_CHUNKS=30
+ONTOLOGY_MAX_TRIPLES=10000
 
 # Path Configuration
-WORKING_DIRECTORY=/path/to/working
-ONTOLOGY_DIRECTORY=/path/to/ontologies
+ONTOCAST_WORKING_DIRECTORY=/path/to/working
+ONTOCAST_ONTOLOGY_DIRECTORY=/path/to/ontologies
+ONTOCAST_CACHE_DIR=/path/to/cache
 
 # Optional: Triple Store Configuration
 FUSEKI_URI=http://localhost:3032/test
@@ -82,6 +88,8 @@ FUSEKI_DATASET=ontocast
 
 # Optional: Skip ontology critique
 SKIP_ONTOLOGY_DEVELOPMENT=false
+# Optional: Maximum triples allowed in ontology graph (set empty for unlimited)
+ONTOLOGY_MAX_TRIPLES=10000
 ```
 
 ### 2. Start Server
@@ -98,7 +106,62 @@ uv run serve \
 curl -X POST http://localhost:8999/process -F "file=@document.pdf"
 ```
 
+### 4. API Endpoints
+
+The OntoCast server provides the following endpoints:
+
+- **POST /process**: Process documents and extract semantic triples
+  ```bash
+  curl -X POST http://localhost:8999/process -F "file=@document.pdf"
+  ```
+
+- **POST /flush**: Flush/clean triple store data
+  ```bash
+  # Clean all datasets (Fuseki) or entire database (Neo4j)
+  curl -X POST http://localhost:8999/flush
+  
+  # Clean specific Fuseki dataset
+  curl -X POST "http://localhost:8999/flush?dataset=my_dataset"
+  ```
+  **Note:** For Fuseki, you can specify a `dataset` query parameter to clean a specific dataset. If omitted, all datasets are cleaned. For Neo4j, the `dataset` parameter is ignored and all data is deleted.
+
+- **GET /health**: Health check endpoint
+- **GET /info**: Service information endpoint
+
 ---
+
+
+## LLM Caching
+
+OntoCast includes automatic LLM response caching to improve performance and reduce API costs. Caching is enabled by default and requires no configuration.
+
+### Cache Locations
+
+- **Tests**: `.test_cache/llm/` in the current working directory
+- **Windows**: `%USERPROFILE%\AppData\Local\ontocast\llm\`
+- **Unix/Linux**: `~/.cache/ontocast/llm/` (or `$XDG_CACHE_HOME/ontocast/llm/`)
+
+### Benefits
+
+- **Faster Execution**: Repeated queries return cached responses instantly
+- **Cost Reduction**: Identical requests don't hit the LLM API
+- **Offline Capability**: Tests can run without API access if responses are cached
+- **Transparent**: No configuration required - works automatically
+
+### Custom Cache Directory
+
+If you need to specify a custom cache directory:
+
+```python
+from pathlib import Path
+from ontocast.tool.llm import LLMTool
+
+# Cache directory is managed automatically by Cacher
+llm_tool = LLMTool.create(
+    config=llm_config
+)
+```
+
 
 ## Configuration System
 
@@ -112,11 +175,14 @@ OntoCast uses a hierarchical configuration system built on Pydantic BaseSettings
 | `LLM_PROVIDER` | LLM provider (openai, ollama) | openai | No |
 | `LLM_MODEL_NAME` | Model name | gpt-4o-mini | No |
 | `LLM_TEMPERATURE` | Temperature setting | 0.1 | No |
-| `WORKING_DIRECTORY` | Working directory path | - | Yes |
-| `ONTOLOGY_DIRECTORY` | Ontology files directory | - | No |
+| `ONTOCAST_WORKING_DIRECTORY` | Working directory path | - | Yes |
+| `ONTOCAST_ONTOLOGY_DIRECTORY` | Ontology files directory | - | No |
 | `PORT` | Server port | 8999 | No |
 | `MAX_VISITS` | Maximum visits per node | 3 | No |
 | `SKIP_ONTOLOGY_DEVELOPMENT` | Skip ontology critique | false | No |
+| `ONTOLOGY_MAX_TRIPLES` | Maximum triples allowed in ontology graph | 10000 | No |
+| `SKIP_FACTS_RENDERING` | Skip facts rendering and go straight to aggregation | false | No |
+| `ONTOCAST_CACHE_DIR` | Custom cache directory for LLM responses | Platform default | No |
 
 ### Triple Store Configuration
 
@@ -140,8 +206,6 @@ ontocast serve --skip-ontology-critique
 # Process only first N chunks (for testing)
 ontocast serve --head-chunks 5
 
-# Clean triple store on startup
-ontocast serve --clean
 ```
 
 ---
@@ -190,6 +254,28 @@ See [Triple Store Setup](docs/user_guide/triple_stores.md) for detailed instruct
 
 ## Recent Changes
 
+### Ontology Management Improvements
+
+- **Automatic Versioning**: Semantic version increment based on change analysis (MAJOR/MINOR/PATCH)
+- **Hash-Based Lineage**: Git-style versioning with parent hashes for tracking ontology evolution
+- **Multiple Version Storage**: Versions stored as separate named graphs in Fuseki triple stores
+- **Timestamp Tracking**: `updated_at` field tracks when ontology was last modified
+- **Smart Version Analysis**: Analyzes ontology changes (classes, properties, instances) to determine appropriate version bump
+
+### GraphUpdate System
+
+- **Token Efficiency**: LLM outputs structured SPARQL operations (insert/delete) instead of full TTL graphs
+- **Incremental Updates**: Only changes are generated, dramatically reducing token usage
+- **Structured Operations**: TripleOp operations with explicit prefix declarations for precise updates
+- **SPARQL Generation**: Automatic conversion of operations to executable SPARQL queries
+
+### Budget Tracking
+
+- **LLM Statistics**: Tracks API calls, characters sent/received for cost monitoring
+- **Triple Metrics**: Tracks ontology and facts triples generated per operation
+- **Summary Reports**: Budget summaries logged at end of processing
+- **Integrated Tracking**: Budget tracker integrated into AgentState for clean dependency injection
+
 ### Configuration System Overhaul
 
 - **Hierarchical Configuration**: New `ToolConfig` and `ServerConfig` structure
@@ -200,9 +286,10 @@ See [Triple Store Setup](docs/user_guide/triple_stores.md) for detailed instruct
 
 ### Enhanced Features
 
-- **CLI Parameters**: New `--skip-ontology-critique` parameter
+- **CLI Parameters**: New `--skip-ontology-critique` and `--skip-facts-rendering` parameters
 - **RDFGraph Operations**: Improved `__iadd__` method with proper prefix binding
 - **Triple Store Management**: Better separation between filesystem and external stores
+- **Serialization Interface**: Unified `serialize()` method for storing Ontology and RDFGraph objects
 - **Error Handling**: Improved error handling and validation
 
 See [CHANGELOG.md](CHANGELOG.md) for complete details.

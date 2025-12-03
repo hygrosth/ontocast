@@ -14,7 +14,8 @@ The module supports:
 import logging
 from collections import defaultdict
 
-from ontocast.onto.constants import DEFAULT_CHUNK_IRI
+from ontocast.onto.chunk import Chunk
+from ontocast.onto.constants import CHUNK_NULL_IRI, DEFAULT_CHUNK_IRI
 from ontocast.onto.enum import Status
 from ontocast.onto.state import AgentState
 
@@ -47,13 +48,9 @@ def check_chunks_empty(state: AgentState) -> AgentState:
         >>> print(updated_state.current_chunk)  # chunk1
         >>> print(updated_state.status)  # Status.FAILED
     """
-    logger.info(
-        f"Chunks (rem): {len(state.chunks)}, "
-        f"chunks proc: {len(state.chunks_processed)}. "
-        f"Setting up current chunk"
-    )
 
-    if state.current_chunk is not None:
+    if CHUNK_NULL_IRI not in state.current_chunk.iri:
+        state.current_chunk.processed = True
         state.current_chunk.graph.remap_namespaces(
             old_namespace=DEFAULT_CHUNK_IRI, new_namespace=state.current_chunk.namespace
         )
@@ -63,16 +60,16 @@ def check_chunks_empty(state: AgentState) -> AgentState:
         state.current_chunk = state.chunks.pop(0)
         state.node_visits = defaultdict(int)
         state.status = Status.FAILED
-        logger.info(
-            "Chunk available, setting status to FAILED"
-            " and proceeding to SELECT_ONTOLOGY"
-        )
     else:
-        state.current_chunk = None
+        state.current_chunk = Chunk(
+            text="",
+            hid="default",
+            doc_iri=CHUNK_NULL_IRI,
+        )
         state.status = Status.SUCCESS
         logger.info(
-            "No more chunks, setting status to SUCCESS "
-            "and proceeding to AGGREGATE_FACTS"
+            f"All chunks processed ({len(state.chunks_processed)} total), "
+            "setting status to SUCCESS and proceeding to AGGREGATE_FACTS"
         )
 
     return state

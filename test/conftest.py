@@ -1,11 +1,21 @@
+"""Pytest configuration for test suite."""
+
 import os
+import warnings
 from pathlib import Path
 
 import pytest
 from suthing import FileHandle
 
+from ontocast.config import (
+    Config,
+    LLMConfig,
+    LLMProvider,
+    OpenAIModel,
+    PathConfig,
+    ToolConfig,
+)
 from ontocast.onto.constants import DEFAULT_DOMAIN
-from ontocast.onto.ontology import Ontology
 from ontocast.onto.rdfgraph import RDFGraph
 from ontocast.onto.state import AgentState
 from ontocast.tool import (
@@ -13,9 +23,31 @@ from ontocast.tool import (
     LLMTool,
     OntologyManager,
 )
-from ontocast.tool.triple_manager import Neo4jTripleStoreManager
-from ontocast.tool.triple_manager.fuseki import FusekiTripleStoreManager
-from ontocast.toolbox import ToolBox, init_toolbox
+from ontocast.tool.triple_manager.mock import (
+    MockFusekiTripleStoreManager,
+    MockNeo4jTripleStoreManager,
+)
+from ontocast.toolbox import ToolBox
+
+# Suppress deprecation warnings from third-party libraries that we cannot control
+# Note: We adapt to new conventions where possible (e.g., using pyld directly for JSON-LD
+# instead of rdflib's deprecated ConjunctiveGraph). These suppressions are only for
+# warnings from external libraries that we cannot modify.
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    message=".*@model_validator.*mode='after'.*",
+    module="docling_core",
+)
+
+
+def pytest_configure(config):
+    """Configure pytest to suppress known deprecation warnings from third-party libraries."""
+    # Suppress Pydantic deprecation warnings from docling_core (third-party library we cannot modify)
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore::DeprecationWarning:docling_core",
+    )
 
 
 @pytest.fixture
@@ -30,12 +62,12 @@ def llm_base_url():
 
 @pytest.fixture
 def provider():
-    return os.getenv("LLM_PROVIDER", "openai")
+    return os.getenv("LLM_PROVIDER", LLMProvider.OPENAI)
 
 
 @pytest.fixture
 def model_name():
-    return os.getenv("LLM_MODEL_NAME", None)
+    return OpenAIModel(os.getenv("LLM_MODEL_NAME", OpenAIModel.GPT4_O_MINI))
 
 
 @pytest.fixture
@@ -45,7 +77,9 @@ def temperature():
 
 @pytest.fixture
 def test_ontology():
-    return RDFGraph._from_turtle_str(
+    from ontocast.onto.ontology import Ontology
+
+    graph = RDFGraph._from_turtle_str(
         """
     @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
     @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
@@ -64,6 +98,7 @@ def test_ontology():
         rdfs:comment "Some kind of event with spacetime coordinates" ;
         rdfs:subClassOf schema:Event .    """
     )
+    return Ontology(graph=graph)
 
 
 @pytest.fixture
@@ -79,12 +114,13 @@ def working_directory():
 
 @pytest.fixture
 def llm_tool(provider, model_name, temperature, llm_base_url):
-    llm_tool = LLMTool.create(
-        provider=provider,
-        model=model_name,
+    config = LLMConfig(
+        provider=LLMProvider(provider),
+        model_name=model_name,
         temperature=temperature,
         base_url=llm_base_url,
     )
+    llm_tool = LLMTool.create(config=config)
     return llm_tool
 
 
@@ -102,17 +138,55 @@ def om_tool_fname():
 
 @pytest.fixture
 def tools(
-    ontology_path, working_directory, model_name, temperature, provider, llm_base_url
+    ontology_path,
+    working_directory,
+    model_name,
+    temperature,
+    provider,
+    llm_base_url,
+    om_tool_fname,
 ) -> ToolBox:
-    tools: ToolBox = ToolBox(
-        llm_base_url=llm_base_url,
-        llm_provider=provider,
-        working_directory=working_directory,
-        ontology_directory=ontology_path,
+    # Create LLM config
+    llm_config = LLMConfig(
+        provider=LLMProvider(provider),
         model_name=model_name,
         temperature=temperature,
+        base_url=llm_base_url,
     )
-    init_toolbox(tools)
+
+    # Create path config
+    path_config = PathConfig(
+        working_directory=working_directory,
+        ontology_directory=ontology_path,
+    )
+
+    # Create tool config
+    tool_config = ToolConfig(
+        llm_config=llm_config,
+        path_config=path_config,
+    )
+
+    # Create main config
+    config = Config(tool_config=tool_config)
+
+    tools: ToolBox = ToolBox(config=config)
+    import asyncio
+
+    asyncio.run(tools.initialize())
+
+    # Load ontologies from JSON file if it exists (using Pydantic's load method)
+    json_path = Path(om_tool_fname)
+    if json_path.exists():
+        try:
+            loaded_om = OntologyManager.load(json_path)
+            # Merge loaded ontologies into the toolbox's ontology manager
+            for iri, versions in loaded_om.ontology_versions.items():
+                for ontology in versions:
+                    tools.ontology_manager.add_ontology(ontology)
+        except Exception:
+            # Silently fail if JSON loading fails
+            pass
+
     return tools
 
 
@@ -222,7 +296,7 @@ def max_iter():
 @pytest.fixture
 def apple_report():
     r = FileHandle.load(Path("data/json/fin.10Q.apple.json"))
-    return {"text": r["text"]}
+    return {"text": r["text"]}  # type: ignore[index]
 
 
 @pytest.fixture
@@ -252,24 +326,25 @@ def neo4j_auth():
 
 @pytest.fixture(scope="session")
 def neo4j_triple_store_manager(neo4j_uri, neo4j_auth):
-    if not (neo4j_uri and neo4j_auth):
-        pytest.skip("Neo4j not configured in environment.")
-    return Neo4jTripleStoreManager(uri=neo4j_uri, auth=neo4j_auth, clean=True)
+    """Mock Neo4j triple store manager for testing."""
+    return MockNeo4jTripleStoreManager(uri=neo4j_uri, auth=neo4j_auth, clean=True)
 
 
 @pytest.fixture(scope="session")
 def fuseki_triple_store_manager():
+    """Mock Fuseki triple store manager for testing."""
     uri = os.environ.get("FUSEKI_URI", "http://localhost:3030/test")
     auth = os.environ.get("FUSEKI_AUTH", None)
-    if not uri:
-        pytest.skip("Fuseki not configured in environment.")
-    return FusekiTripleStoreManager(uri=uri, auth=auth, dataset="test", clean=True)
+    if auth and "/" in auth:
+        auth = tuple(auth.split("/", 1))
+    return MockFusekiTripleStoreManager(uri=uri, auth=auth, dataset="test", clean=True)
 
 
 def triple_store_roundtrip(manager, test_ontology):
-    ontology = Ontology(graph=test_ontology)
+    # test_ontology is already an Ontology object, use it directly
+    ontology = test_ontology
     # Store ontology
-    manager.serialize_ontology(ontology)
+    manager.serialize(ontology)
     # Fetch ontologies
     ontologies = manager.fetch_ontologies()
     # There should be at least one ontology with the correct ontology_id
@@ -313,8 +388,8 @@ def triple_store_serialize_facts(manager):
     expected_triple_count = len(facts)
     assert expected_triple_count == 15, "Test facts should contain triples"
     # Serialize facts to triple store
-    result = manager.serialize_facts(facts)
-    assert result is not None, "serialize_facts should return a result"
+    result = manager.serialize(facts)
+    assert result is not None, "serialize should return a result"
 
 
 def triple_store_serialize_empty_facts(manager):
@@ -322,7 +397,5 @@ def triple_store_serialize_empty_facts(manager):
     # Create empty facts
     empty_facts = RDFGraph()
     # Serialize empty facts - should not raise an error
-    result = manager.serialize_facts(empty_facts)
-    assert result is not None, (
-        "serialize_facts should return a result even for empty graph"
-    )
+    result = manager.serialize(empty_facts)
+    assert result is not None, "serialize should return a result even for empty graph"

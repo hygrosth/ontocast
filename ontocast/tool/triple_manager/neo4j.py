@@ -7,22 +7,16 @@ triple storage for accurate reconstruction.
 """
 
 import logging
-from typing import Optional
+from typing import Any
 
+from neo4j import GraphDatabase
+from rdflib import Graph
 from rdflib.namespace import OWL, RDF
-
-from ontocast.tool.triple_manager.core import TripleStoreManagerWithAuth
-
-try:
-    from neo4j import GraphDatabase
-except ImportError:
-    GraphDatabase = None
-
-from pydantic import Field
 
 from ontocast.onto.ontology import Ontology
 from ontocast.onto.rdfgraph import RDFGraph
 from ontocast.onto.util import derive_ontology_id
+from ontocast.tool.triple_manager.core import TripleStoreManagerWithAuth
 
 logger = logging.getLogger(__name__)
 
@@ -41,26 +35,21 @@ class Neo4jTripleStoreManager(TripleStoreManagerWithAuth):
     - Faithful RDF graph reconstruction
 
     Attributes:
-        clean: Whether to clean the database on initialization.
         _driver: Private Neo4j driver instance.
     """
 
-    clean: bool = Field(
-        default=False, description="If True, clean the database on init."
-    )
-    _driver = None  # private attribute, not a pydantic field
+    _driver: Any = None  # private attribute, not a pydantic field
 
-    def __init__(self, uri=None, auth=None, clean=False, **kwargs):
+    def __init__(self, uri=None, auth=None, **kwargs):
         """Initialize the Neo4j triple store manager.
 
         This method sets up the connection to Neo4j, initializes the n10s
-        plugin configuration, creates necessary constraints and indexes,
-        and optionally cleans all data from the database.
+        plugin configuration, and creates necessary constraints and indexes.
+        The database is NOT cleaned on initialization.
 
         Args:
             uri: Neo4j connection URI (e.g., "bolt://localhost:7687").
             auth: Authentication tuple (username, password) or string in "user/password" format.
-            clean: If True, delete all nodes in the database on initialization.
             **kwargs: Additional keyword arguments passed to the parent class.
 
         Raises:
@@ -69,32 +58,60 @@ class Neo4jTripleStoreManager(TripleStoreManagerWithAuth):
         Example:
             >>> manager = Neo4jTripleStoreManager(
             ...     uri="bolt://localhost:7687",
-            ...     auth="neo4j/password",
-            ...     clean=True
+            ...     auth="neo4j/password"
             ... )
+            >>> # To clean the database, use the clean() method explicitly:
+            >>> await manager.clean()
         """
         super().__init__(
             uri=uri, auth=auth, env_uri="NEO4J_URI", env_auth="NEO4J_AUTH", **kwargs
         )
-        self.clean = clean
         if GraphDatabase is None:
             raise ImportError("neo4j Python driver is not installed.")
+        if self.uri is None:
+            raise ValueError("Neo4j URI is required but not provided.")
         self._driver = GraphDatabase.driver(self.uri, auth=self.auth)
 
-        with self._driver.session() as session:
-            # Clean database if requested
-            if self.clean:
-                try:
-                    session.run("MATCH (n) DETACH DELETE n")
-                    logger.debug("Neo4j database cleaned (all nodes deleted)")
-                except Exception as e:
-                    logger.debug(f"Neo4j cleanup failed: {e}")
+        # Type assertion: we know _driver is not None after initialization
+        assert self._driver is not None
 
+        with self._driver.session() as session:
             # Initialize n10s configuration
             self._init_n10s_config(session)
 
             # Create constraints and indexes
             self._create_constraints_and_indexes(session)
+
+    async def clean(self, dataset: str | None = None) -> None:
+        """Clean/flush all data from the Neo4j database.
+
+        This method deletes all nodes and relationships from the Neo4j database,
+        effectively clearing all stored data.
+
+        Args:
+            dataset: Optional dataset parameter (ignored for Neo4j, which doesn't
+                support datasets). Included for interface compatibility.
+
+        Warning: This operation is irreversible and will delete all data.
+
+        Raises:
+            Exception: If the cleanup operation fails.
+        """
+        if dataset is not None:
+            logger.warning(
+                f"Dataset parameter '{dataset}' ignored for Neo4j (datasets not supported)"
+            )
+
+        if self._driver is None:
+            raise ValueError("Neo4j driver is not initialized")
+
+        with self._driver.session() as session:
+            try:
+                session.run("MATCH (n) DETACH DELETE n")
+                logger.info("Neo4j database cleaned (all nodes deleted)")
+            except Exception as e:
+                logger.error(f"Neo4j cleanup failed: {e}")
+                raise
 
     def _init_n10s_config(self, session):
         """Initialize n10s configuration with better RDF handling.
@@ -231,6 +248,8 @@ class Neo4jTripleStoreManager(TripleStoreManagerWithAuth):
         """
         ontologies = []
 
+        # Type assertion: we know _driver is not None after initialization
+        assert self._driver is not None
         with self._driver.session() as session:
             try:
                 # First, try to get explicitly stored ontology metadata
@@ -276,7 +295,7 @@ class Neo4jTripleStoreManager(TripleStoreManagerWithAuth):
         iris = [iri for iri in iris if iri is not None]
         return iris
 
-    def _reconstruct_ontology_from_metadata(self, session, iri) -> Optional[Ontology]:
+    def _reconstruct_ontology_from_metadata(self, session, iri) -> Ontology | None:
         """Reconstruct an ontology from its metadata and related entities.
 
         This method takes an ontology IRI and reconstructs the complete
@@ -287,7 +306,7 @@ class Neo4jTripleStoreManager(TripleStoreManagerWithAuth):
             iri: The ontology IRI to reconstruct.
 
         Returns:
-            Optional[Ontology]: The reconstructed ontology, or None if failed.
+            Ontology | None: The reconstructed ontology, or None if failed.
         """
         namespace_uri, _ = self._extract_namespace_prefix(iri)
 
@@ -300,7 +319,7 @@ class Neo4jTripleStoreManager(TripleStoreManagerWithAuth):
 
     def _export_namespace_via_n10s(
         self, session, namespace_uri: str
-    ) -> Optional[RDFGraph]:
+    ) -> RDFGraph | None:
         """Export entities belonging to a namespace using n10s.
 
         This method uses Neo4j's n10s plugin to export all entities
@@ -311,7 +330,7 @@ class Neo4jTripleStoreManager(TripleStoreManagerWithAuth):
             namespace_uri: The namespace URI to export.
 
         Returns:
-            Optional[RDFGraph]: The exported RDF graph, or None if failed.
+            RDFGraph | None: The exported RDF graph, or None if failed.
         """
         try:
             result = session.run(
@@ -388,22 +407,33 @@ class Neo4jTripleStoreManager(TripleStoreManagerWithAuth):
         ontology_id = derive_ontology_id(iri)
         return Ontology(graph=graph, iri=iri, ontology_id=ontology_id)
 
-    def serialize_ontology(self, o: Ontology, **kwargs):
-        """Serialize an ontology to Neo4j with both n10s and raw triple storage.
+    def serialize_graph(self, graph: Graph, **kwargs) -> bool | None:
+        """Serialize an RDF graph to Neo4j with both n10s and raw triple storage.
 
-        This method stores the given ontology in Neo4j using the n10s plugin
-        for RDF import. The ontology is stored as RDF triples that can be
-        faithfully reconstructed later.
+        This method stores the given RDF graph in Neo4j using the n10s plugin
+        for RDF import. The data is stored as RDF triples that can be faithfully
+        reconstructed later.
 
         Args:
-            o: The ontology to store.
-            **kwargs: Additional keyword arguments (not used).
+            graph: The RDF graph to store.
+            **kwargs: Additional parameters (not used by Neo4j implementation).
 
         Returns:
             Any: The result summary from n10s import operation.
         """
-        turtle_data = o.graph.serialize(format="turtle")
+        # Convert to RDFGraph if needed
+        if not isinstance(graph, RDFGraph):
+            rdf_graph = RDFGraph()
+            for triple in graph:
+                rdf_graph.add(triple)
+            for prefix, namespace in graph.namespaces():
+                rdf_graph.bind(prefix, namespace)
+            graph = rdf_graph
 
+        turtle_data = graph.serialize(format="turtle")
+
+        # Type assertion: we know _driver is not None after initialization
+        assert self._driver is not None
         with self._driver.session() as session:
             # Store via n10s for graph queries
             result = session.run(
@@ -413,29 +443,28 @@ class Neo4jTripleStoreManager(TripleStoreManagerWithAuth):
 
         return summary
 
-    def serialize_facts(self, g: RDFGraph, **kwargs):
-        """Serialize facts (RDF graph) to Neo4j.
+    def serialize(self, o: Ontology | RDFGraph, **kwargs) -> bool | None:
+        """Serialize an Ontology or RDFGraph to Neo4j with both n10s and raw triple storage.
 
-        This method stores the given RDF graph containing facts in Neo4j
-        using the n10s plugin for RDF import.
+        This method stores the given Ontology or RDFGraph in Neo4j using the n10s plugin
+        for RDF import. The data is stored as RDF triples that can be faithfully
+        reconstructed later.
 
         Args:
-            g: The RDF graph containing facts to store.
-            **kwargs: Additional keyword arguments (not used).
+            o: Ontology or RDFGraph object to store.
+            **kwargs: Additional keyword arguments (not used by Neo4j implementation).
 
         Returns:
             Any: The result summary from n10s import operation.
         """
-        turtle_data = g.serialize(format="turtle")
+        if isinstance(o, Ontology):
+            graph = o.graph
+        elif isinstance(o, RDFGraph):
+            graph = o
+        else:
+            raise TypeError(f"unsupported obj of type {type(o)} received")
 
-        with self._driver.session() as session:
-            # Store via n10s
-            result = session.run(
-                "CALL n10s.rdf.import.inline($ttl, 'Turtle')", ttl=turtle_data
-            )
-            summary = result.single()
-
-        return summary
+        return self.serialize_graph(graph)
 
     def close(self):
         """Close the Neo4j driver connection.

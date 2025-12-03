@@ -7,11 +7,11 @@ ontologies and facts as Turtle files.
 
 import logging
 import pathlib
-from typing import Optional
 
 from rdflib import Graph
 
 from ontocast.onto.ontology import Ontology
+from ontocast.onto.rdfgraph import RDFGraph
 from ontocast.tool.triple_manager.core import TripleStoreManager
 
 logger = logging.getLogger(__name__)
@@ -35,8 +35,8 @@ class FilesystemTripleStoreManager(TripleStoreManager):
         ontology_path: Optional path to the ontology directory for loading ontologies.
     """
 
-    working_directory: Optional[pathlib.Path]
-    ontology_path: Optional[pathlib.Path]
+    working_directory: pathlib.Path | None
+    ontology_path: pathlib.Path | None
 
     def __init__(self, **kwargs):
         """Initialize the filesystem triple store manager.
@@ -84,60 +84,68 @@ class FilesystemTripleStoreManager(TripleStoreManager):
                     logger.error(f"Failed to load ontology {fname}: {str(e)}")
         return ontologies
 
-    def serialize_ontology(self, o: Ontology, **kwargs):
-        """Store an ontology in the filesystem.
+    def serialize_graph(self, graph: Graph, **kwargs) -> bool | None:
+        """Store an RDF graph in the filesystem.
 
-        This method stores the given ontology as a Turtle file in the
-        working directory. The filename is generated using the ontology
-        ID and version to ensure uniqueness.
+        This method stores the given RDF graph as a Turtle file in the
+        working directory. The filename is generated based on the graph_uri
+        parameter or defaults to "current.ttl".
 
         Args:
-            o: The ontology to store.
-            **kwargs: Additional keyword arguments for serialization (not used).
+            graph: The RDF graph to store.
+            fname:  str
 
         Example:
-            >>> ontology = Ontology(ontology_id="test", version="1.0", graph=graph)
-            >>> manager.serialize_ontology(ontology)
-            # Creates: working_directory/ontology_test_1.0.ttl
+            >>> graph = RDFGraph()
+            >>> manager.serialize_graph(graph)
+            # Creates: working_directory/current.ttl
+
+            >>> manager.serialize_graph(graph, fname="facts_abc.ttl")
         """
-        if self.working_directory is not None:
-            fname = f"ontology_{o.ontology_id}_{o.version}"
-            output_path = self.working_directory / f"{fname}.ttl"
-            o.graph.serialize(format="turtle", destination=output_path)
-            logger.info(f"Ontology saved to {output_path}")
+        if self.working_directory is None:
+            return
 
-    def serialize_facts(self, g: Graph, **kwargs):
-        """Store a graph with facts in the filesystem.
+        fname: str = kwargs.pop("fname")
+        output_path = self.working_directory / fname
+        graph.serialize(format="turtle", destination=output_path)
+        logger.info(f"Graph saved to {output_path}")
 
-        This method stores the given RDF graph containing facts as a
-        Turtle file in the working directory. The filename can be
-        customized using the spec parameter.
+    def serialize(self, o: Ontology | RDFGraph, graph_uri: str | None = None):
+        if isinstance(o, Ontology):
+            graph = o.graph
+            fname = f"ontology_{o.ontology_id}_{o.version}.ttl"
+        elif isinstance(o, RDFGraph):
+            graph = o
+            if graph_uri:
+                s = graph_uri.split("/")[-2:]
+                s = "_".join([x for x in s if x])
+                fname = f"facts_{s}.ttl"
+            else:
+                fname = "facts_default.ttl"
+        else:
+            raise TypeError(f"unsupported obj of type {type(o)} received")
+
+        self.serialize_graph(graph=graph, fname=fname)
+
+    async def clean(self, dataset: str | None = None) -> None:
+        """Clean/flush all data from the filesystem triple store.
+
+        This method deletes all Turtle (.ttl) files from both the working
+        directory and the ontology directory.
 
         Args:
-            g: The RDF graph containing facts to store.
-            **kwargs: Additional keyword arguments for serialization.
-                spec: Optional specification for the filename. If provided as a string,
-                      it will be processed to create a meaningful filename.
+            dataset: Optional dataset parameter (ignored for Filesystem, which doesn't
+                support datasets). Included for interface compatibility.
+
+        Warning: This operation is irreversible and will delete all data.
 
         Raises:
-            TypeError: If spec is provided but not a string.
-
-        Example:
-            >>> facts = RDFGraph()
-            >>> manager.serialize_facts(facts, spec="domain/subdomain")
-            # Creates: working_directory/facts_domain_subdomain.ttl
+            Exception: If the cleanup operation fails.
         """
-        spec = kwargs.pop("spec", None)
-        if spec is None:
-            fname = "current.ttl"
-        elif isinstance(spec, str):
-            s = spec.split("/")[-2:]
-            s = "_".join([x for x in s if x])
-            fname = f"facts_{s}.ttl"
-        else:
-            raise TypeError(f"string expected for spec {spec}")
-
-        if self.working_directory is not None:
-            filename = self.working_directory / fname
-            g.serialize(format="turtle", destination=filename)
-            logger.info(f"Facts saved to {filename}")
+        if dataset is not None:
+            logger.warning(
+                f"Dataset parameter '{dataset}' ignored for Filesystem (datasets not supported)"
+            )
+            logger.warning(
+                "clean method not implemented for FilesystemTripleStoreManager"
+            )

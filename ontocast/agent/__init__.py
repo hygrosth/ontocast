@@ -6,26 +6,27 @@ ontology management. Each agent is designed to perform a specific task in the
 ontology processing pipeline.
 """
 
-from .aggregate_facts import aggregate_serialize
+from .aggregate_serialize import aggregate, serialize
 from .check_chunks import check_chunks_empty
 from .chunk_text import chunk_text
 from .convert_document import convert_document
 from .criticise_facts import criticise_facts
 from .criticise_ontology import criticise_ontology
-from .render_facts import render_facts
-from .render_ontology_triples import render_onto_triples
+from .render_facts import render_facts_fresh
+from .render_ontology import render_ontology_fresh
 from .select_ontology import select_ontology
 from .sublimate_ontology import sublimate_ontology
 
 __all__ = [
+    "aggregate",
     "check_chunks_empty",
     "chunk_text",
     "convert_document",
     "criticise_facts",
     "criticise_ontology",
-    "aggregate_serialize",
     "select_ontology",
+    "serialize",
     "sublimate_ontology",
-    "render_onto_triples",
-    "render_facts",
+    "render_ontology_fresh",
+    "render_facts_fresh",
 ]

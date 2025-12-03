@@ -1,32 +1,35 @@
-"""Ontology criticism agent for OntoCast.
+"""Enhanced ontology criticism agent with SPARQL operations.
 
-This module provides functionality for analyzing and validating ontologies,
-ensuring their structural integrity, consistency, and alignment with domain
-requirements.
+This module provides enhanced functionality for analyzing and validating ontologies of previous critiques and SPARQL operation support.
 """
 
 import logging
 
 from langchain.output_parsers import PydanticOutputParser
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
-from ontocast.onto.constants import ONTOLOGY_NULL_IRI
-from ontocast.onto.enum import FailureStages, Status
-from ontocast.onto.model import OntologyUpdateCritiqueReport
+from ontocast.agent.common import call_llm_with_retry
+from ontocast.onto.enum import FailureStage, Status, WorkflowNode
+from ontocast.onto.model import OntologyCritiqueReport, Suggestions
 from ontocast.onto.state import AgentState
-from ontocast.prompt.criticise_ontology import prompt_fresh, prompt_update
-from ontocast.tool import LLMTool, OntologyManager
+from ontocast.prompt.common import ontology_template, text_template
+from ontocast.prompt.common import system_preamble_ontology as system_preamble
+from ontocast.prompt.criticise_ontology import (
+    intro_instruction,
+    ontology_criteria,
+    template_prompt,
+)
+from ontocast.tool import LLMTool
 from ontocast.toolbox import ToolBox
 
 logger = logging.getLogger(__name__)
 
 
-def criticise_ontology(state: AgentState, tools: ToolBox) -> AgentState:
-    """Analyze and validate the current ontology.
+async def criticise_ontology(state: AgentState, tools: ToolBox) -> AgentState:
+    """Enhanced ontology criticism with SPARQL operations.
 
     This function performs a critical analysis of the ontology in the current
-    state, checking for structural integrity, consistency, and alignment with
-    domain requirements.
+    state, with SPARQL operation support.
 
     Args:
         state: The current agent state containing the ontology to analyze.
@@ -35,79 +38,84 @@ def criticise_ontology(state: AgentState, tools: ToolBox) -> AgentState:
     Returns:
         AgentState: Updated state with analysis results.
     """
-    logger.info("Criticize ontology")
-    llm_tool: LLMTool = tools.llm
-    om_tool: OntologyManager = tools.ontology_manager
-    parser = PydanticOutputParser(pydantic_object=OntologyUpdateCritiqueReport)
+
+    progress_info = state.get_chunk_progress_string()
+    logger.info(
+        f"Ontology Critic for {progress_info}: visit {state.node_visits[WorkflowNode.CRITICISE_ONTOLOGY] + 1}/{state.max_visits}"
+    )
 
     if state.current_chunk is None:
         state.status = Status.FAILED
         return state
 
-    if state.current_ontology.iri == ONTOLOGY_NULL_IRI:
-        prompt = prompt_fresh
-        ontology_original_str = ""
-    else:
-        ontology_original_str = (
-            f"Here is the original ontology:"
-            f"\n```ttl\n{state.current_ontology.graph.serialize(format='turtle')}\n```"
+    if state.current_ontology.is_null():
+        raise ValueError(
+            f"Null ontology cannot be criticised: {state.current_ontology.iri} is not a valid ontology"
         )
-        prompt = prompt_update
+
+    parser = PydanticOutputParser(pydantic_object=OntologyCritiqueReport)
+    llm_tool: LLMTool = await tools.get_llm_tool(state.budget_tracker)
+
+    ontology_ttl = state.current_ontology.graph.serialize(format="turtle")
+
+    ontology_chapter = ontology_template.format(
+        ontology_ttl=ontology_ttl,
+    )
+
+    text_chapter = text_template.format(text=state.current_chunk.text)
+
+    user_instruction = state.ontology_user_instruction
 
     prompt = PromptTemplate(
-        template=prompt,
+        template=template_prompt,
         input_variables=[
-            "ontology_update",
-            "document",
+            "preamble",
+            "facts_instruction",
+            "ontology_instruction",
+            "user_instruction",
+            "text_chapter",
+            "improvement_instruction",
             "format_instructions",
-            "ontology_original_str",
         ],
     )
 
-    response = llm_tool(
-        prompt.format_prompt(
-            ontology_update=state.ontology_addendum.graph.serialize(format="turtle"),
-            document=state.current_chunk.text,
-            format_instructions=parser.get_format_instructions(),
-            ontology_original_str=ontology_original_str,
+    try:
+        critique: OntologyCritiqueReport = await call_llm_with_retry(
+            llm_tool=llm_tool,
+            prompt=prompt,
+            parser=parser,
+            prompt_kwargs={
+                "preamble": system_preamble,
+                "intro_instruction": intro_instruction,
+                "ontology_criteria": ontology_criteria,
+                "text_chapter": text_chapter,
+                "user_instruction": user_instruction,
+                "ontology_chapter": ontology_chapter,
+                "format_instructions": parser.get_format_instructions(),
+            },
         )
-    )
-    critique: OntologyUpdateCritiqueReport = parser.parse(response.content)
-    logger.debug(
-        f"Parsed critique report status: {critique.ontology_update_success}, "
-        f"score: {critique.ontology_update_score}"
-    )
-
-    if state.ontology_addendum.iri == ONTOLOGY_NULL_IRI:
-        state.set_failure(
-            stage=FailureStages.ONTOLOGY_CRITIQUE,
-            reason=critique.ontology_update_failed,
-            success_score=critique.ontology_update_score,
-        )
-
-    if (
-        state.current_ontology.iri == ONTOLOGY_NULL_IRI
-        or state.current_ontology.iri is None
-        or state.ontology_addendum.iri not in tools.ontology_manager
-    ):
-        logger.debug("Adding new ontology to manager")
-        om_tool.ontologies.append(state.ontology_addendum)
-        state.current_ontology = state.ontology_addendum
-    else:
-        logger.info(f"Updating existing ontology: {state.current_ontology.ontology_id}")
-        om_tool.update_ontology(
-            state.current_ontology.ontology_id, state.ontology_addendum.graph
+        logger.info(
+            f"Parsed critique report - success: {critique.success}, "
+            f"score: {critique.score}, n fixes: {len(critique.actionable_ontology_fixes)}."
         )
 
-    if critique.ontology_update_success:
-        logger.info("Ontology critique successful, clearing failure state")
-        state.clear_failure()
-    else:
-        logger.info("Ontology critique failed, setting failure state")
-        state.set_failure(
-            stage=FailureStages.ONTOLOGY_CRITIQUE,
-            reason=critique.ontology_update_critique,
-            success_score=critique.ontology_update_score,
-        )
+        if critique.success or critique.score > 90:
+            state.status = Status.SUCCESS
+            state.set_node_status(WorkflowNode.CRITICISE_ONTOLOGY, Status.SUCCESS)
+            logger.info("Ontology critique passed")
+        else:
+            state.status = Status.FAILED
+            state.failure_stage = FailureStage.ONTOLOGY_CRITIQUE
+            state.set_node_status(WorkflowNode.CRITICISE_ONTOLOGY, Status.FAILED)
+            state.suggestions = Suggestions.from_critique_report(critique)
+            state.failure_reason = "Ontology Critic suggests improvements"
+            logger.info(
+                f"Ontology critique failed: {critique.systemic_critique_summary}"
+            )
+        return state
 
-    return state
+    except Exception as e:
+        logger.error(f"Failed to critique ontology: {str(e)}")
+        state.set_failure(FailureStage.ONTOLOGY_CRITIQUE, str(e))
+        state.set_node_status(WorkflowNode.CRITICISE_ONTOLOGY, Status.FAILED)
+        return state

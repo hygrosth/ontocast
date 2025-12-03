@@ -4,19 +4,10 @@ from enum import StrEnum
 class Status(StrEnum):
     """Enumeration of possible workflow status values."""
 
+    NOT_VISITED = "not visited"
     SUCCESS = "success"
     FAILED = "failed"
     COUNTS_EXCEEDED = "counts exceeded"
-
-
-class ToolType(StrEnum):
-    """Enumeration of tool types used in the workflow."""
-
-    LLM = "llm"
-    TRIPLE_STORE = "triple store manager"
-    ONTOLOGY_MANAGER = "ontology manager"
-    CONVERTER = "document converter"
-    CHUNKER = "document chunker"
 
 
 class OntologyDecision(StrEnum):
@@ -27,14 +18,28 @@ class OntologyDecision(StrEnum):
     IMPROVE_CREATE_ONTOLOGY = "improve/create ontology"
 
 
-class FailureStages(StrEnum):
+class FactsDecision(StrEnum):
+    """Enumeration of Ontology Decisions used in the workflow."""
+
+    TEXT_TO_FACTS = "adequate ontology; render facts"
+    TEXT_TO_ONTOLOGY = "inadequate ontology; retry render onto"
+    SERIALIZE = "skip to serialize"
+
+
+class FailureStage(StrEnum):
     """Enumeration of possible failure stages in the workflow."""
 
     NO_CHUNKS_TO_PROCESS = "No chunks to process"
     ONTOLOGY_CRITIQUE = "The produced ontology did not pass the critique stage."
     FACTS_CRITIQUE = "The produced graph of facts did not pass the critique stage."
-    PARSE_TEXT_TO_ONTOLOGY_TRIPLES = "Failed to parse the text into ontology triples."
-    PARSE_TEXT_TO_FACTS_TRIPLES = "Failed to parse the text into facts triples."
+    GENERATE_TTL_FOR_ONTOLOGY = (
+        "Failed to generate semantic triples (turtle) for ontology"
+    )
+    GENERATE_SPARQL_UPDATE_FOR_ONTOLOGY = (
+        "Failed to generate SPARQL update for ontology"
+    )
+    GENERATE_TTL_FOR_FACTS = "Failed to generate semantic triples (turtle) for facts"
+    GENERATE_SPARQL_UPDATE_FOR_FACTS = "Failed to generate SPARQL update for ontology"
     SUBLIMATE_ONTOLOGY = (
         "The produced semantic could not be validated "
         "or separated into ontology and facts (technical issue)."
@@ -54,3 +59,15 @@ class WorkflowNode(StrEnum):
     CRITICISE_FACTS = "Criticise Facts"
     CHUNKS_EMPTY = "Chunks Empty?"
     AGGREGATE_FACTS = "Aggregate Facts"
+    SERIALIZE = "Serialize"
+
+
+class SPARQLOperationType(StrEnum):
+    """Enumeration of SPARQL operation types.
+
+    This enum is used across the system for type-safe SPARQL operations.
+    """
+
+    INSERT = "INSERT"
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"

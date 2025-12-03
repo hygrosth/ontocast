@@ -51,6 +51,27 @@ def convert_document(state: AgentState, tools: ToolBox) -> AgentState:
             result = tools.converter(file_content)
         elif file_extension == ".json":
             result = json.loads(file_content.decode("utf-8"))
+
+            # Extract user instructions from JSON if present
+            ontology_user_instruction = result.get("ontology_user_instruction", "")
+            facts_user_instruction = result.get("facts_user_instruction", "")
+
+            # Update state with user instructions
+            if ontology_user_instruction:
+                state.ontology_user_instruction = ontology_user_instruction
+                logger.debug(
+                    f"Set ontology user instruction: {ontology_user_instruction}"
+                )
+            if facts_user_instruction:
+                state.facts_user_instruction = facts_user_instruction
+                logger.debug(f"Set facts user instruction: {facts_user_instruction}")
+
+            # Extract source URL from JSON if present (for provenance tracking)
+            source_url = result.get("url", None)
+            if source_url:
+                state.source_url = source_url
+                logger.debug(f"Extracted source URL from JSON: {source_url}")
+
         elif file_extension == ".txt":
             result = {"text": json.loads(file_content.decode("utf-8"))}
         else:

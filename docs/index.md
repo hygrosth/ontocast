@@ -25,6 +25,10 @@ OntoCast is a framework for extracting semantic triples (creating a Knowledge Gr
 - **MCP Compatibility**: Implements Model Control Protocol endpoints
 - **RDF Output**: Produces standardized RDF/Turtle
 - **Triple Store Integration**: Supports Neo4j (n10s) and Apache Fuseki
+- **Automatic LLM Caching**: Built-in response caching for improved performance and cost reduction
+- **GraphUpdate Operations**: Token-efficient SPARQL-based updates instead of full graph regeneration
+- **Budget Tracking**: Comprehensive tracking of LLM usage and triple generation metrics
+- **Ontology Versioning**: Automatic semantic versioning with hash-based lineage tracking
 
 ---
 
@@ -52,6 +56,16 @@ pip install ontocast
 
 ## Configuration
 
+## Documentation
+
+- [Quick Start Guide](getting_started/quickstart.md) - Get started quickly
+- [Configuration System](user_guide/configuration.md) - Detailed configuration guide
+- [LLM Caching](user_guide/llm_caching.md) - Automatic response caching
+- [Triple Store Setup](user_guide/triple_stores.md) - Triple store configuration
+- [User Guide](user_guide/concepts.md) - Core concepts and workflow
+- [API Reference](reference/onto.md) - Detailed API documentation
+
+
 ### Environment Variables
 
 Copy the example file and edit as needed:
@@ -70,7 +84,7 @@ LLM_MODEL_NAME=gpt-4o-mini # ollama model
 LLM_TEMPERATURE=0.0
 
 # openai
-OPENAI_API_KEY=your_openai_api_key_here
+LLM_API_KEY=your_openai_api_key_here
 
 # ollama
 LLM_BASE_URL=
@@ -79,6 +93,11 @@ LLM_BASE_URL=
 PORT=8999
 RECURSION_LIMIT=1000
 ESTIMATED_CHUNKS=30
+
+# Backend Configuration (auto-detected)
+FUSEKI_URI=http://localhost:3032/test
+FUSEKI_AUTH=admin:password
+ONTOCAST_WORKING_DIRECTORY=/path/to/working
 
 # Optional: Triple Store Configuration (Fuseki preferred over Neo4j)
 FUSEKI_URI=http://localhost:3032/test
@@ -102,13 +121,19 @@ OntoCast supports multiple triple store backends. When both Fuseki and Neo4j are
 ## Running OntoCast Server
 
 ```bash
-uv run serve \
-    --ontology-directory ONTOLOGY_DIR \
-    --working-directory WORKING_DIR \
-    --clean
+# Backend automatically detected from .env configuration
+uv run serve --env-path .env
+
+# Process specific file
+uv run serve --env-path .env --input-path ./document.pdf
+
+# Process with chunk limit (for testing)
+uv run serve --env-path .env --head-chunks 5
 ```
 
-- `--clean` (optional): If set, the triple store (Neo4j or Fuseki) will be initialized as clean (all data deleted on startup). **Warning:** Use with caution in production!
+- Backend selection is **fully automatic** based on available configuration
+- No explicit backend flags needed - just provide the required credentials/paths in .env
+- All paths and directories are configured via .env file
 
 ---
 
@@ -137,6 +162,7 @@ curl -X POST http://url:port/process -F "file=@test2/sample.json"
 - `GET /health`: Health check
 - `GET /info`: Service info
 - `POST /process`: Document processing
+- `POST /flush`: Flush/clean triple store data (optional `dataset` query parameter for Fuseki)
 
 ---
 

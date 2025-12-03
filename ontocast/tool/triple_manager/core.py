@@ -6,12 +6,12 @@ abstract interfaces and concrete implementations for different triple store back
 
 import abc
 import os
-from typing import Optional
 
 from pydantic import Field
 from rdflib import Graph
 
 from ontocast.onto.ontology import Ontology
+from ontocast.onto.rdfgraph import RDFGraph
 from ontocast.tool import Tool
 
 
@@ -47,32 +47,57 @@ class TripleStoreManager(Tool):
         return []
 
     @abc.abstractmethod
-    def serialize_ontology(self, o: Ontology, **kwargs):
-        """Store an ontology in the triple store.
+    def serialize_graph(self, graph: Graph, **kwargs) -> bool | None:
+        """Store an RDF graph in the triple store.
 
-        This method should store the given ontology and its associated RDF graph
-        in the triple store. The implementation may choose how to organize
-        the storage (e.g., as named graphs, in specific collections, etc.).
+        This method should store the given RDF graph in the triple store.
+        The implementation may choose how to organize the storage (e.g., as named graphs,
+        in specific collections, etc.).
 
         Args:
-            o: The ontology to store.
-            **kwargs: Additional keyword arguments for serialization.
+            graph: The RDF graph to store.
+            **kwargs: Implementation-specific arguments (e.g., fname for filesystem, graph_uri for Fuseki).
+
+        Returns:
+            bool | None: Implementation-specific return value (bool for Fuseki, summary for Neo4j, None for Filesystem).
         """
         pass
 
     @abc.abstractmethod
-    def serialize_facts(self, g: Graph, **kwargs):
-        """Store a graph with facts in the triple store.
+    def serialize(self, o: Ontology | RDFGraph, **kwargs) -> bool | None:
+        """Store an RDF graph in the triple store.
 
-        This method should store the given RDF graph containing facts
-        in the triple store. The implementation may choose how to organize
-        the storage (e.g., as named graphs, in specific collections, etc.).
+        This method should store the given RDF graph in the triple store.
+        The implementation may choose how to organize the storage (e.g., as named graphs,
+        in specific collections, etc.).
 
         Args:
-            g: The RDF graph containing facts to store.
-            **kwargs: Additional keyword arguments for serialization.
+            o: RDF graph or Ontology object to store.
+            **kwargs: Implementation-specific arguments (e.g., graph_uri for Fuseki).
+
+        Returns:
+            bool | None: Implementation-specific return value (bool for Fuseki, summary for Neo4j, None for Filesystem).
         """
         pass
+
+    @abc.abstractmethod
+    async def clean(self, dataset: str | None = None) -> None:
+        """Clean/flush data from the triple store.
+
+        This method removes data from the triple store. For Fuseki, the optional
+        dataset parameter allows cleaning a specific dataset, or all datasets if None.
+        For Neo4j and Filesystem, the dataset parameter is ignored.
+
+        Args:
+            dataset: Optional dataset name to clean (Fuseki only). If None, cleans
+                all data. For other stores, this parameter is ignored.
+
+        Warning: This operation is irreversible and will delete all data.
+
+        Raises:
+            NotImplementedError: If the triple store doesn't support cleaning.
+        """
+        raise NotImplementedError("clean() method must be implemented by subclasses")
 
 
 class TripleStoreManagerWithAuth(TripleStoreManager):
@@ -87,12 +112,9 @@ class TripleStoreManagerWithAuth(TripleStoreManager):
         auth: Authentication tuple (username, password) for the triple store.
     """
 
-    uri: Optional[str] = Field(default=None, description="Triple store connection URI")
-    auth: Optional[tuple] = Field(
+    uri: str | None = Field(default=None, description="Triple store connection URI")
+    auth: tuple | None = Field(
         default=None, description="Triple store authentication tuple (user, password)"
-    )
-    clean: bool = Field(
-        default=False, description="If True, clean the database on init."
     )
 
     def __init__(self, uri=None, auth=None, env_uri=None, env_auth=None, **kwargs):

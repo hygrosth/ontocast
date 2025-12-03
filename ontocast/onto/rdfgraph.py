@@ -1,3 +1,5 @@
+import hashlib
+import json
 import logging
 import re
 from collections import defaultdict
@@ -6,7 +8,8 @@ from typing import Any, Union
 
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import core_schema
-from rdflib import Graph, Namespace, URIRef
+from pyld import jsonld
+from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import NamespaceManager
 
 from ontocast.onto.constants import COMMON_PREFIXES
@@ -33,6 +36,7 @@ class RDFGraph(Graph):
 
         Returns:
             A union schema that handles both Graph instances and string conversion.
+            Supports both Turtle and JSON-LD string formats.
         """
         return core_schema.union_schema(
             [
@@ -40,9 +44,7 @@ class RDFGraph(Graph):
                 core_schema.chain_schema(
                     [
                         core_schema.str_schema(),
-                        core_schema.no_info_plain_validator_function(
-                            cls._from_turtle_str
-                        ),
+                        core_schema.no_info_plain_validator_function(cls._from_str),
                     ]
                 ),
             ],
@@ -111,6 +113,24 @@ class RDFGraph(Graph):
 
         return self
 
+    def copy(self) -> "RDFGraph":
+        """Create a copy of this RDFGraph.
+
+        Returns:
+            RDFGraph: A new RDFGraph instance with all triples and namespace bindings copied.
+        """
+        result = RDFGraph()
+
+        # Copy all triples
+        for triple in self:
+            result.add(triple)
+
+        # Copy namespace bindings
+        for prefix, uri in self.namespaces():
+            result.bind(prefix, uri)
+
+        return result
+
     @staticmethod
     def _ensure_prefixes(turtle_str: str) -> str:
         """Ensure all common prefixes are declared in the Turtle string.
@@ -141,6 +161,51 @@ class RDFGraph(Graph):
 
         return prefix_block + turtle_str
 
+    @staticmethod
+    def _is_jsonld_str(s: str) -> bool:
+        """Check if a string appears to be JSON-LD format.
+
+        Args:
+            s: The string to check.
+
+        Returns:
+            bool: True if the string appears to be JSON-LD.
+        """
+        s = s.strip()
+        if not (s.startswith("{") or s.startswith("[")):
+            return False
+        try:
+            # Try to parse as JSON
+            data = json.loads(s)
+            # Check if it's a dict/object with @context or @id, or an array containing such objects
+            if isinstance(data, dict):
+                return "@context" in data or "@id" in data
+            elif isinstance(data, list):
+                return any(
+                    isinstance(item, dict) and ("@context" in item or "@id" in item)
+                    for item in data
+                )
+            return False
+        except (json.JSONDecodeError, ValueError):
+            return False
+
+    @classmethod
+    def _from_str(cls, data_str: str) -> "RDFGraph":
+        """Create an RDFGraph instance from a string (Turtle or JSON-LD).
+
+        Automatically detects the format and parses accordingly.
+
+        Args:
+            data_str: The input string in Turtle or JSON-LD format.
+
+        Returns:
+            RDFGraph: A new RDFGraph instance.
+        """
+        if cls._is_jsonld_str(data_str):
+            return cls._from_jsonld_str(data_str)
+        else:
+            return cls._from_turtle_str(data_str)
+
     @classmethod
     def _from_turtle_str(cls, turtle_str: str) -> "RDFGraph":
         """Create an RDFGraph instance from a Turtle string.
@@ -155,6 +220,59 @@ class RDFGraph(Graph):
         patched_turtle = cls._ensure_prefixes(turtle_str)
         g = cls()
         g.parse(data=patched_turtle, format="turtle")
+        return g
+
+    @classmethod
+    def _from_jsonld_str(cls, jsonld_str: str) -> "RDFGraph":
+        """Create an RDFGraph instance from a JSON-LD string.
+
+        Args:
+            jsonld_str: The input JSON-LD string.
+
+        Returns:
+            RDFGraph: A new RDFGraph instance with namespace prefixes extracted from @context.
+        """
+        # Use pyld to convert JSON-LD to n-quads, then parse to avoid rdflib's deprecated ConjunctiveGraph
+        # This adapts to the new convention by using pyld directly instead of rdflib's JSON-LD parser
+        jsonld_data = json.loads(jsonld_str)
+        normalized = jsonld.normalize(
+            jsonld_data,
+            {"algorithm": "URDNA2015", "format": "application/n-quads"},
+        )
+
+        # jsonld.normalize returns a string when format is "application/n-quads"
+        normalized_str = normalized if isinstance(normalized, str) else str(normalized)
+
+        # Parse the normalized n-quads into RDFGraph
+        g = cls()
+        g.parse(data=normalized_str, format="nquads")
+
+        # Extract prefixes from @context in JSON-LD and bind them
+        try:
+            context = None
+
+            # Handle single object or array
+            if isinstance(jsonld_data, dict):
+                context = jsonld_data.get("@context")
+            elif isinstance(jsonld_data, list) and jsonld_data:
+                # For arrays, check first item for @context
+                first_item = jsonld_data[0]
+                if isinstance(first_item, dict):
+                    context = first_item.get("@context")
+
+            # Bind prefixes from @context
+            if context and isinstance(context, dict):
+                for prefix, uri in context.items():
+                    if isinstance(uri, str) and not prefix.startswith("@"):
+                        # Skip JSON-LD keywords (starting with @)
+                        try:
+                            g.bind(prefix, uri)
+                        except Exception as e:
+                            logger.debug(f"Failed to bind prefix '{prefix}': {e}")
+
+        except (json.JSONDecodeError, ValueError, AttributeError) as e:
+            logger.debug(f"Could not extract prefixes from JSON-LD @context: {e}")
+
         return g
 
     @staticmethod
@@ -336,3 +454,63 @@ class RDFGraph(Graph):
         for (s, p, o), (new_s, new_p, new_o) in updates.items():
             self.remove((s, p, o))
             self.add((new_s, new_p, new_o))
+
+    def add_triple(self, subject: str, predicate: str, object_: str) -> None:
+        """Add a triple to the graph.
+
+        Args:
+            subject: Subject URI as string
+            predicate: Predicate URI as string
+            object_: Object URI as string or literal value
+        """
+        # Convert strings to appropriate RDFLib objects
+        subj = URIRef(subject)
+        pred = URIRef(predicate)
+
+        # Handle object - could be URI or literal
+        if object_.startswith("http://") or object_.startswith("https://"):
+            obj = URIRef(object_)
+        else:
+            # Treat as literal
+            obj = Literal(object_)
+
+        self.add((subj, pred, obj))
+        logger.debug(f"Added triple: {subj} {pred} {obj}")
+
+    def remove_triple(self, subject: str, predicate: str, object_: str) -> None:
+        """Remove a triple from the graph.
+
+        Args:
+            subject: Subject URI as string
+            predicate: Predicate URI as string
+            object_: Object URI as string or literal value
+        """
+        # Convert strings to appropriate RDFLib objects
+        subj = URIRef(subject)
+        pred = URIRef(predicate)
+
+        # Handle object - could be URI or literal
+        if object_.startswith("http://") or object_.startswith("https://"):
+            obj = URIRef(object_)
+        else:
+            # Treat as literal
+            obj = Literal(object_)
+
+        self.remove((subj, pred, obj))
+        logger.debug(f"Removed triple: {subj} {pred} {obj}")
+
+    def hash(self: Graph) -> str:
+        # Serialize to JSON-LD
+        data = self.serialize(format="json-ld")
+
+        # Parse the JSON string
+        doc = json.loads(data)
+
+        # Canonicalize using URDNA2015 normalization
+        normalized = jsonld.normalize(
+            doc,
+            {"algorithm": "URDNA2015", "format": "application/n-quads"},
+        )
+        # jsonld.normalize returns a string when format is "application/n-quads"
+        normalized_str = normalized if isinstance(normalized, str) else str(normalized)
+        return hashlib.sha256(normalized_str.encode("utf-8")).hexdigest()

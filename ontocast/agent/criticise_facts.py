@@ -1,28 +1,39 @@
-"""Fact criticism agent for OntoCast.
+"""Enhanced fact criticism agent with memory and SPARQL operations.
 
-This module provides functionality for analyzing and validating facts extracted
-from text chunks, ensuring their consistency and correctness.
+This module provides enhanced functionality for analyzing and validating facts
+with SPARQL operation support.
 """
 
 import logging
 
 from langchain.output_parsers import PydanticOutputParser
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
-from ontocast.onto.enum import FailureStages
-from ontocast.onto.model import KGCritiqueReport
+from ontocast.agent.common import call_llm_with_retry
+from ontocast.onto.enum import FailureStage, Status, WorkflowNode
+from ontocast.onto.model import FactsCritiqueReport, Suggestions
 from ontocast.onto.state import AgentState
-from ontocast.prompt.criticise_facts import prompt as criticise_facts_prompt
+from ontocast.prompt.common import (
+    facts_template,
+    ontology_template,
+    text_template,
+    user_template,
+)
+from ontocast.prompt.criticise_facts import (
+    evaluation_instruction,
+    preamble,
+    template_prompt,
+)
 from ontocast.toolbox import ToolBox
 
 logger = logging.getLogger(__name__)
 
 
-def criticise_facts(state: AgentState, tools: ToolBox) -> AgentState:
-    """Analyze and validate facts in the current chunk.
+async def criticise_facts(state: AgentState, tools: ToolBox) -> AgentState:
+    """Enhanced criticize facts with SPARQL operations.
 
     This function performs a critical analysis of the facts in the current chunk,
-    checking for consistency, correctness, and potential issues.
+    with SPARQL operation support.
 
     Args:
         state: The current agent state containing the chunk to analyze.
@@ -35,43 +46,84 @@ def criticise_facts(state: AgentState, tools: ToolBox) -> AgentState:
         logger.warning("No current chunk to analyze")
         return state
 
-    logger.info("Criticize facts")
+    progress_info = state.get_chunk_progress_string()
+    logger.info(
+        f"Facts critic for {progress_info}: visit {state.node_visits[WorkflowNode.CRITICISE_FACTS] + 1}/{state.max_visits}"
+    )
 
-    llm_tool = tools.llm
-    parser = PydanticOutputParser(pydantic_object=KGCritiqueReport)
+    llm_tool = await tools.get_llm_tool(state.budget_tracker)
+    parser = PydanticOutputParser(pydantic_object=FactsCritiqueReport)
+
+    ontology_ttl = state.current_ontology.graph.serialize(format="turtle")
+
+    ontology_chapter = ontology_template.format(
+        ontology_ttl=ontology_ttl,
+    )
+
+    facts_ttl = state.current_chunk.graph.serialize(format="turtle")
+
+    facts_chapter = facts_template.format(
+        facts_ttl=facts_ttl,
+    )
+
+    text_chapter = text_template.format(text=state.current_chunk.text)
+
+    user_instruction = (
+        user_template.format(user_instruction=state.facts_user_instruction)
+        if state.facts_user_instruction
+        else ""
+    )
 
     prompt = PromptTemplate(
-        template=criticise_facts_prompt,
+        template=template_prompt,
         input_variables=[
-            "ontology",
-            "document",
-            "knowledge_graph",
+            "preamble",
+            "evaluation_instruction",
+            "user_instruction",
+            "ontology_chapter",
+            "facts_chapter",
+            "text_chapter",
             "format_instructions",
         ],
     )
 
-    response = llm_tool(
-        prompt.format_prompt(
-            ontology=state.current_ontology.graph.serialize(format="turtle"),
-            document=state.current_chunk.text,
-            knowledge_graph=state.current_chunk.graph.serialize(format="turtle"),
-            format_instructions=parser.get_format_instructions(),
-        )
-    )
-    critique: KGCritiqueReport = parser.parse(response.content)
-    logger.debug(
-        f"Parsed critique report - success: {critique.facts_graph_derivation_success}, "
-        f"score: {critique.facts_graph_derivation_score}"
-    )
+    prompt_data = {
+        "preamble": preamble,
+        "evaluation_instruction": evaluation_instruction,
+        "user_instruction": user_instruction,
+        "ontology_chapter": ontology_chapter,
+        "facts_chapter": facts_chapter,
+        "text_chapter": text_chapter,
+        "format_instructions": parser.get_format_instructions(),
+    }
 
-    if critique.facts_graph_derivation_success:
-        logger.debug("Facts critique successful, clearing failure state")
-        state.clear_failure()
-    else:
-        logger.debug("Facts critique failed, setting failure state")
-        state.set_failure(
-            stage=FailureStages.FACTS_CRITIQUE,
-            reason=critique.facts_graph_derivation_critique_comment,
-            success_score=critique.facts_graph_derivation_score,
+    try:
+        critique: FactsCritiqueReport = await call_llm_with_retry(
+            llm_tool=llm_tool,
+            prompt=prompt,
+            parser=parser,
+            prompt_kwargs=prompt_data,
         )
-    return state
+        logger.debug(
+            f"Parsed critique report - success: {critique.success}, "
+            f"score: {critique.score}"
+        )
+
+        if critique.success or critique.score > 90:
+            state.status = Status.SUCCESS
+            state.set_node_status(WorkflowNode.CRITICISE_FACTS, Status.SUCCESS)
+            logger.info("Facts critique passed")
+        else:
+            state.status = Status.FAILED
+            state.set_node_status(WorkflowNode.CRITICISE_FACTS, Status.FAILED)
+            state.failure_stage = FailureStage.FACTS_CRITIQUE
+            state.suggestions = Suggestions.from_critique_report(critique)
+            state.failure_reason = "Facts Critic suggests improvements"
+
+        return state
+
+    except Exception as e:
+        logger.error(f"Failed to criticize facts: {str(e)}")
+        state.set_failure(FailureStage.FACTS_CRITIQUE, str(e))
+        state.set_node_status(WorkflowNode.CRITICISE_FACTS, Status.FAILED)
+        return state

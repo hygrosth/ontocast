@@ -1,37 +1,57 @@
-prompt_fresh = """You are a helpful assistant that criticises a newly proposed ontology.
-You need to decide whether the updated ontology is sufficiently complete and comprehensive, also providing a score between 0 and 100.
-The ontology is considered complete and comprehensive if it captures the most important abstract classes and properties that are present explicitly or implicitly in the document.
-If is not not complete and comprehensive, provide a very concrete itemized explanation of why can be improved.
-As we are working on an ontology, ONLY abstract classes and properties are considered, concrete entities are not important.
+template_prompt = """
+{preamble}
 
-{ontology_original_str}
+{intro_instruction}
 
-Here is the document from which the ontology was derived:
-{document}
+{ontology_criteria}
 
-Here is the proposed ontology:
-```ttl
-{ontology_update}
-```
+{user_instruction}
+
+{ontology_chapter}
+
+{text_chapter}
 
 {format_instructions}
 """
 
-prompt_update = """You are a helpful assistant that criticises an ontology update.
-You need to decide whether the updated ontology is sufficiently complete and comprehensive, also providing a score between 0 and 100.
-The ontology is considered complete and comprehensive if it captures the most important abstract classes and properties that are present explicitly or implicitly in the document.
-If is not not complete and comprehensive, provide a very concrete itemized explanation of why can be improved.
-As we are working on an ontology, ONLY abstract classes and properties are considered, concrete entities are not important.
+intro_instruction = """
+You are given a text and an ontology.
+You task is to evaluate the quality of the ontology with respect to the provided doc and provide a constructive critique of the ontology with respect to provided text.
+"""
 
-{ontology_original_str}
 
-Here is the document from which the ontology update was derived:
-{document}
+ontology_criteria = """
+# TASK
+Provide a constructive, actionable critique following these priorities:
 
-Here is the ontology update:
-```ttl
-{ontology_update}
-```
+## PRIMARY EVALUATION CRITERIA (in order of importance):
+1. **Consistency**: No logical contradictions, proper use of OWL semantics
+2. **Completeness**: All key domain concepts from text are represented
+3. **Correctness**: Accurate relationships, proper datatypes, valid syntax
+4. **Structure**: Appropriate class hierarchies and property definitions
+5. **Abstraction**: Uses abstract classes/properties (no instances)
+6. **Domain Coverage**: Includes implicit domain knowledge beyond literal text
 
-{format_instructions}
+## SCORING:
+- 90-100: Excellent - minor refinements only
+- 70-89: Good - some improvements needed
+- 50-69: Adequate - significant gaps or errors
+- 30-49: Poor - major structural issues
+- 0-29: Inadequate - fundamental problems
+
+## OUTPUT REQUIREMENTS:
+1. Start with what works well (2-3 strengths)
+2. Group fixes by severity: critical → important → minor
+   - Use severity: "critical" (breaks semantic graph), "important" (significant gap), or "minor" (polish)
+3. For each fix, provide:
+   - Exact text evidence (quote from source)
+   - Clear before/after using Turtle syntax
+   - Actionable explanation
+4. Systemic summary should identify patterns, not repeat individual fixes
+
+## SPECIAL INSTRUCTIONS:
+- For missing concepts: specify WHERE in the hierarchy they belong
+- For relationship errors: explain the correct domain/range constraints
+- For redundancies: suggest consolidation strategy
+- Prioritize fixes that have cascading impact
 """
